@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1112,67 +1113,79 @@
         </div>
     </div>
 
-    <!-- GRN Modal -->
+        <!-- GRN Modal - FIXED for Multiple Items -->
     <div class="modal-overlay" id="grn-modal">
-        <div class="modal">
+        <div class="modal" style="max-width: 900px;">
             <div class="modal-header">
-                <h3 class="modal-title"><i class="fas fa-truck-loading"></i> New Goods Receipt Note</h3>
+                <h3 class="modal-title"><i class="fas fa-truck-loading"></i> New Goods Receipt Note (GRN)</h3>
                 <button class="modal-close" onclick="closeModal('grn-modal')">&times;</button>
             </div>
             <div class="modal-body">
                 <form id="grn-form" onsubmit="saveGRN(event)">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">GRN Number</label>
-                            <input type="text" class="form-input" name="grnNumber" id="auto-grn-number" readonly>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Date</label>
-                            <input type="date" class="form-input" name="date" required>
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">Supplier</label>
-                            <input type="text" class="form-input" name="supplier" required placeholder="Supplier name">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Invoice Number</label>
-                            <input type="text" class="form-input" name="invoiceNumber" placeholder="Invoice ref">
-                        </div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label class="form-label">Items Received</label>
-                        <div id="grn-items-container">
-                            <div class="ingredient-row">
-                                <select class="form-select grn-item-select" required onchange="updateGRNTotal()">
-                                    <option value="">Select Ingredient</option>
-                                </select>
-                                <input type="number" class="form-input" placeholder="Qty" step="0.01" required onchange="updateGRNTotal()">
-                                <input type="number" class="form-input" placeholder="Unit Cost (Rs)" step="0.01" required onchange="updateGRNTotal()">
-                                <button type="button" class="remove-ingredient" onclick="removeGRNRow(this)">
-                                    <i class="fas fa-trash"></i>
-                                </button>
+                    <!-- GRN Header Info -->
+                    <div style="background: #f0fdf4; padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 2px solid #bbf7d0;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">GRN Number <span style="color: var(--danger)">*</span></label>
+                                <input type="text" class="form-input" name="grnNumber" id="auto-grn-number" readonly style="background: #f8fafc; font-weight: 700; color: var(--success);">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Date <span style="color: var(--danger)">*</span></label>
+                                <input type="date" class="form-input" name="date" required style="font-weight: 600;">
                             </div>
                         </div>
-                        <button type="button" class="btn btn-secondary" onclick="addGRNRow()" style="margin-top: 10px;">
-                            <i class="fas fa-plus"></i> Add Item
-                        </button>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Supplier <span style="color: var(--danger)">*</span></label>
+                                <input type="text" class="form-input" name="supplier" required placeholder="Enter supplier name" style="font-weight: 600;">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Invoice / Reference #</label>
+                                <input type="text" class="form-input" name="invoiceNumber" placeholder="Invoice or PO number">
+                            </div>
+                        </div>
                     </div>
-                    
-                    <div style="background: #f0fdf4; padding: 20px; border-radius: 12px; margin-bottom: 20px; text-align: center;">
-                        <div style="font-size: 14px; color: var(--gray);">Total GRN Value</div>
-                        <div style="font-size: 32px; font-weight: 900; color: var(--success);" id="grn-total">Rs 0.00</div>
+
+                    <!-- Items Section -->
+                    <div style="margin-bottom: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <label class="form-label" style="margin: 0;"><i class="fas fa-boxes"></i> Items Received <span style="color: var(--danger)">*</span></label>
+                            <button type="button" class="btn btn-primary" onclick="addGRNRow()" style="padding: 8px 16px; font-size: 13px;">
+                                <i class="fas fa-plus"></i> Add Item
+                            </button>
+                        </div>
+                        
+                        <!-- Table Header for Items -->
+                        <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px; padding: 10px; background: #f8fafc; border-radius: 8px; margin-bottom: 10px; font-weight: 700; font-size: 12px; color: var(--gray); text-transform: uppercase;">
+                            <div>Ingredient</div>
+                            <div>Quantity</div>
+                            <div>Unit Cost</div>
+                            <div>Total</div>
+                            <div></div>
+                        </div>
+                        
+                        <!-- Items Container -->
+                        <div id="grn-items-container" style="max-height: 300px; overflow-y: auto;">
+                            <!-- Rows will be added here dynamically -->
+                        </div>
+                    </div>
+
+                    <!-- Grand Total -->
+                    <div style="background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%); padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 2px solid #34d399; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-size: 14px; color: #065f46; font-weight: 600;">Total Items: <span id="total-items-count">0</span></div>
+                            <div style="font-size: 12px; color: #059669;">Grand Total</div>
+                        </div>
+                        <div style="font-size: 36px; font-weight: 900; color: #059669;" id="grn-grand-total">Rs 0.00</div>
                     </div>
                     
                     <div class="form-group">
                         <label class="form-label">Notes</label>
-                        <textarea class="form-input" name="notes" rows="3" placeholder="Any additional notes..."></textarea>
+                        <textarea class="form-input" name="notes" rows="2" placeholder="Any additional notes about this delivery..."></textarea>
                     </div>
                     
-                    <button type="submit" class="btn btn-primary" style="width: 100%;">
-                        <i class="fas fa-save"></i> Save GRN
+                    <button type="submit" class="btn btn-primary" style="width: 100%; padding: 16px; font-size: 16px;">
+                        <i class="fas fa-save"></i> Save GRN with All Items
                     </button>
                 </form>
             </div>
@@ -2252,10 +2265,8 @@ function openModal(modalId) {
 
     // Special init only — NO reset here
     if (modalId === 'grn-modal') {
-        document.getElementById('auto-grn-number').value = 'GRN-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(Math.random()*1000);
-        document.querySelector('#grn-modal input[name="date"]').valueAsDate = new Date();
-        populateIngredientSelects();
-    }
+                resetGRNForm();
+            }
     if (modalId === 'add-recipe-modal') {
         populateRecipeIngredientSelects();  // Just fill selects — don't reset form
     }
@@ -3013,78 +3024,152 @@ function resetRecipeForm() {
             `).join('');
         }
 
+                // ==========================================
+        // FIXED GRN FUNCTIONS - Multiple Items Support
         // ==========================================
-        // GRN FUNCTIONS
-        // ==========================================
-        function populateIngredientSelects() {
-            const options = inventoryData.ingredients.map(ing => 
-                `<option value="${ing.id}">${ing.name} (${ing.unit})</option>`
-            ).join('');
+        
+        function resetGRNForm() {
+            const form = document.getElementById('grn-form');
+            if (form) form.reset();
+            
+            // Generate new GRN number
+            const grnNum = 'GRN-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(Math.random()*1000);
+            document.getElementById('auto-grn-number').value = grnNum;
+            
+            // Set today's date
+            const dateInput = document.querySelector('#grn-modal input[name="date"]');
+            if (dateInput) dateInput.valueAsDate = new Date();
+            
+            // Reset items container with one empty row
+            const container = document.getElementById('grn-items-container');
+            if (container) {
+                container.innerHTML = createGRNRowHTML(true);
+            }
+            
+            updateGRNTotals();
+        }
 
-            document.querySelectorAll('.grn-item-select').forEach(select => {
-                select.innerHTML = '<option value="">Select Ingredient</option>' + options;
-            });
+        function createGRNRowHTML(isFirst = false) {
+            const options = inventoryData.ingredients.map(ing => 
+                `<option value="${ing.id}" data-unit="${ing.unit}">${ing.name} (${ing.unit})</option>`
+            ).join('');
+            
+            return `
+                <div class="grn-item-row" style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: center; background: white; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb; transition: all 0.2s;">
+                    <select class="form-select grn-item-select" required onchange="updateGRNRowTotal(this)" style="width: 100%;">
+                        <option value="">Select Ingredient</option>
+                        ${options}
+                    </select>
+                    <input type="number" class="form-input" placeholder="0.00" step="0.01" min="0.01" required onchange="updateGRNRowTotal(this)" style="text-align: right;">
+                    <input type="number" class="form-input" placeholder="0.00" step="0.01" min="0" required onchange="updateGRNRowTotal(this)" style="text-align: right;">
+                    <div class="row-total" style="font-weight: 700; color: var(--dark); text-align: right;">Rs 0.00</div>
+                    <button type="button" class="remove-ingredient" onclick="removeGRNRow(this)" ${isFirst ? 'style="opacity: 0.3;" disabled title="Cannot remove last item"' : ''}>
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            `;
         }
 
         function addGRNRow() {
             const container = document.getElementById('grn-items-container');
-            const row = document.createElement('div');
-            row.className = 'ingredient-row';
-            row.innerHTML = `
-                <select class="form-select grn-item-select" required onchange="updateGRNTotal()">
-                    <option value="">Select Ingredient</option>
-                    ${inventoryData.ingredients.map(ing => `<option value="${ing.id}">${ing.name} (${ing.unit})</option>`).join('')}
-                </select>
-                <input type="number" class="form-input" placeholder="Qty" step="0.01" required onchange="updateGRNTotal()">
-                <input type="number" class="form-input" placeholder="Unit Cost (Rs)" step="0.01" required onchange="updateGRNTotal()">
-                <button type="button" class="remove-ingredient" onclick="removeGRNRow(this)">
-                    <i class="fas fa-trash"></i>
-                </button>
-            `;
-            container.appendChild(row);
+            const div = document.createElement('div');
+            div.innerHTML = createGRNRowHTML(false);
+            container.appendChild(div.firstElementChild);
+            updateGRNTotals();
+            
+            // Scroll to bottom
+            container.scrollTop = container.scrollHeight;
         }
 
         function removeGRNRow(btn) {
-            btn.closest('.ingredient-row').remove();
-            updateGRNTotal();
+            const rows = document.querySelectorAll('.grn-item-row');
+            if (rows.length <= 1) {
+                alert('You must have at least one item in the GRN.');
+                return;
+            }
+            
+            btn.closest('.grn-item-row').remove();
+            updateGRNTotals();
         }
 
-        function updateGRNTotal() {
-            let total = 0;
-            document.querySelectorAll('#grn-items-container .ingredient-row').forEach(row => {
+        function updateGRNRowTotal(element) {
+            const row = element.closest('.grn-item-row');
+            const inputs = row.querySelectorAll('input');
+            const qty = parseFloat(inputs[0].value) || 0;
+            const cost = parseFloat(inputs[1].value) || 0;
+            const total = qty * cost;
+            
+            row.querySelector('.row-total').textContent = 'Rs ' + total.toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            
+            updateGRNTotals();
+        }
+
+        function updateGRNTotals() {
+            let grandTotal = 0;
+            let itemCount = 0;
+            
+            document.querySelectorAll('.grn-item-row').forEach(row => {
                 const inputs = row.querySelectorAll('input');
                 const qty = parseFloat(inputs[0].value) || 0;
                 const cost = parseFloat(inputs[1].value) || 0;
-                total += qty * cost;
+                grandTotal += qty * cost;
+                if (qty > 0) itemCount++;
             });
-            document.getElementById('grn-total').textContent = formatCurrency(total);
+            
+            document.getElementById('grn-grand-total').textContent = 'Rs ' + grandTotal.toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            document.getElementById('total-items-count').textContent = itemCount;
         }
 
         function saveGRN(e) {
             e.preventDefault();
             const form = e.target;
-
+            
+            // Collect all items
             const items = [];
-            document.querySelectorAll('#grn-items-container .ingredient-row').forEach(row => {
-                const selects = row.querySelectorAll('select');
+            let hasError = false;
+            
+            document.querySelectorAll('.grn-item-row').forEach((row, index) => {
+                const select = row.querySelector('select');
                 const inputs = row.querySelectorAll('input');
-                if (selects[0].value && inputs[0].value && inputs[1].value) {
-                    const ingredient = inventoryData.ingredients.find(i => i.id === parseInt(selects[0].value));
+                
+                const ingredientId = parseInt(select.value);
+                const qty = parseFloat(inputs[0].value);
+                const unitCost = parseFloat(inputs[1].value);
+                
+                if (!ingredientId || !qty || unitCost === undefined) {
+                    hasError = true;
+                    row.style.borderColor = 'var(--danger)';
+                    return;
+                }
+                
+                row.style.borderColor = '#e5e7eb';
+                
+                const ingredient = inventoryData.ingredients.find(i => i.id === ingredientId);
+                if (ingredient) {
                     items.push({
-                        ingredientId: parseInt(selects[0].value),
-                        name: ingredient ? ingredient.name : 'Unknown',
-                        qty: parseFloat(inputs[0].value),
-                        unitCost: parseFloat(inputs[1].value),
-                        total: parseFloat(inputs[0].value) * parseFloat(inputs[1].value)
+                        ingredientId: ingredientId,
+                        name: ingredient.name,
+                        qty: qty,
+                        unit: ingredient.unit,
+                        unitCost: unitCost,
+                        total: qty * unitCost
                     });
-
-                    // Update stock
-                    if (ingredient) {
-                        ingredient.currentStock += parseFloat(inputs[0].value);
-                    }
+                    
+                    // Update stock immediately
+                    ingredient.currentStock += qty;
                 }
             });
-
+            
+            if (hasError) {
+                alert('Please fill in all item details correctly.');
+                return;
+            }
+            
+            if (items.length === 0) {
+                alert('Please add at least one item to the GRN.');
+                return;
+            }
+            
             const grn = {
                 id: generateId(),
                 grnNumber: form.grnNumber.value,
@@ -3093,77 +3178,189 @@ function resetRecipeForm() {
                 invoiceNumber: form.invoiceNumber.value,
                 items: items,
                 total: items.reduce((sum, item) => sum + item.total, 0),
-                notes: form.notes.value
+                notes: form.notes.value,
+                timestamp: new Date().toISOString()
             };
-
+            
             inventoryData.grnHistory.unshift(grn);
-
+            
             closeModal('grn-modal');
-            form.reset();
-            document.getElementById('grn-items-container').innerHTML = `
-                <div class="ingredient-row">
-                    <select class="form-select grn-item-select" required>
-                        <option value="">Select Ingredient</option>
-                    </select>
-                    <input type="number" class="form-input" placeholder="Qty" step="0.01" required>
-                    <input type="number" class="form-input" placeholder="Unit Cost (Rs)" step="0.01" required>
-                    <button type="button" class="remove-ingredient" onclick="removeGRNRow(this)">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
-            `;
-
             renderIngredients();
             renderGRN();
             refreshDashboard();
-            alert('GRN saved and stock updated!');
+            
+            alert(`GRN saved successfully!\n\nGRN #: ${grn.grnNumber}\nItems: ${items.length}\nTotal: Rs ${grn.total.toLocaleString('en-PK', {minimumFractionDigits: 2})}`);
         }
 
         function renderGRN() {
             const container = document.getElementById('grn-container');
+            const dateFilter = document.getElementById('grn-date-filter')?.value;
+            const supplierFilter = document.getElementById('grn-supplier-filter')?.value?.toLowerCase();
+            
+            let filtered = inventoryData.grnHistory;
+            
+            if (dateFilter) {
+                filtered = filtered.filter(g => g.date === dateFilter);
+            }
+            if (supplierFilter) {
+                filtered = filtered.filter(g => g.supplier.toLowerCase().includes(supplierFilter));
+            }
 
-            if (inventoryData.grnHistory.length === 0) {
+            if (filtered.length === 0) {
                 container.innerHTML = `
-                    <div style="text-align: center; padding: 40px; color: var(--gray);">
-                        <i class="fas fa-truck" style="font-size: 48px; margin-bottom: 15px;"></i>
-                        <h3>No GRN Records</h3>
-                        <p>Create a new GRN when you receive stock from suppliers.</p>
+                    <div style="text-align: center; padding: 60px 40px; color: var(--gray); background: white; border-radius: 20px; border: 2px dashed #e5e7eb;">
+                        <i class="fas fa-truck" style="font-size: 64px; margin-bottom: 20px; color: #e5e7eb;"></i>
+                        <h3 style="margin-bottom: 10px;">No GRN Records Found</h3>
+                        <p>Create a new GRN when you receive stock from suppliers.<br>All items from the same day will be grouped together.</p>
                     </div>
                 `;
                 return;
             }
 
-            container.innerHTML = inventoryData.grnHistory.map(grn => `
-                <div class="grn-card">
-                    <div class="grn-header">
+            container.innerHTML = filtered.map(grn => `
+                <div class="grn-card" style="background: linear-gradient(135deg, #ecfdf5 0%, #ffffff 100%); border: 2px solid #34d399; border-radius: 20px; padding: 25px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                    <div class="grn-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 2px solid #bbf7d0;">
                         <div>
-                            <div class="grn-number">${grn.grnNumber}</div>
-                            <div style="font-size: 13px; color: var(--gray); margin-top: 5px;">
-                                <i class="fas fa-calendar"></i> ${formatDate(grn.date)} | 
-                                <i class="fas fa-building"></i> ${grn.supplier}
+                            <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 8px;">
+                                <span style="font-size: 22px; font-weight: 900; color: #059669; font-family: monospace;">${grn.grnNumber}</span>
+                                <span style="background: #34d399; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 700;">${grn.items.length} ITEMS</span>
+                            </div>
+                            <div style="font-size: 14px; color: var(--gray); display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
+                                <span><i class="fas fa-calendar-alt" style="color: var(--primary); margin-right: 5px;"></i> ${formatDate(grn.date)}</span>
+                                <span><i class="fas fa-building" style="color: var(--primary); margin-right: 5px;"></i> ${grn.supplier}</span>
+                                ${grn.invoiceNumber ? `<span><i class="fas fa-file-invoice" style="color: var(--primary); margin-right: 5px;"></i> Inv: ${grn.invoiceNumber}</span>` : ''}
                             </div>
                         </div>
                         <div style="text-align: right;">
-                            <div style="font-size: 24px; font-weight: 900; color: var(--success);">${formatCurrency(grn.total)}</div>
-                            <div style="font-size: 12px; color: var(--gray);">Total Value</div>
+                            <div style="font-size: 32px; font-weight: 900; color: #059669;">${formatCurrency(grn.total)}</div>
+                            <div style="font-size: 12px; color: var(--gray); text-transform: uppercase; letter-spacing: 1px;">Total Value</div>
                         </div>
                     </div>
-                    <div class="grn-items">
-                        ${grn.items.map(item => `
-                            <div class="grn-item">
-                                <span style="font-weight: 600;">${item.name}</span>
-                                <span style="color: var(--gray);">${item.qty} units @ ${formatCurrency(item.unitCost)}</span>
-                            </div>
-                        `).join('')}
+                    
+                    <div style="background: white; border-radius: 12px; overflow: hidden; border: 1px solid #e5e7eb;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="background: #f8fafc;">
+                                    <th style="padding: 12px 15px; text-align: left; font-size: 11px; text-transform: uppercase; color: var(--gray); font-weight: 800;">Item</th>
+                                    <th style="padding: 12px 15px; text-align: center; font-size: 11px; text-transform: uppercase; color: var(--gray); font-weight: 800;">Qty</th>
+                                    <th style="padding: 12px 15px; text-align: right; font-size: 11px; text-transform: uppercase; color: var(--gray); font-weight: 800;">Unit Cost</th>
+                                    <th style="padding: 12px 15px; text-align: right; font-size: 11px; text-transform: uppercase; color: var(--gray); font-weight: 800;">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${grn.items.map((item, idx) => `
+                                    <tr style="border-top: 1px solid #f3f4f6; ${idx % 2 === 0 ? 'background: #fafafa;' : ''}">
+                                        <td style="padding: 12px 15px; font-weight: 600; color: var(--dark);">${item.name}</td>
+                                        <td style="padding: 12px 15px; text-align: center;">
+                                            <span style="background: #f3f4f6; padding: 4px 12px; border-radius: 20px; font-weight: 700;">${item.qty} ${item.unit}</span>
+                                        </td>
+                                        <td style="padding: 12px 15px; text-align: right; color: var(--gray);">${formatCurrency(item.unitCost)}</td>
+                                        <td style="padding: 12px 15px; text-align: right; font-weight: 700; color: var(--dark);">${formatCurrency(item.total)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
                     </div>
-                    ${grn.notes ? `<div style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #bbf7d0; font-size: 13px; color: var(--gray);"><i class="fas fa-sticky-note"></i> ${grn.notes}</div>` : ''}
+                    
+                    ${grn.notes ? `
+                        <div style="margin-top: 15px; padding: 15px; background: #fef3c7; border-radius: 10px; border-left: 4px solid var(--warning); font-size: 13px; color: #92400e;">
+                            <i class="fas fa-sticky-note" style="margin-right: 8px;"></i> ${grn.notes}
+                        </div>
+                    ` : ''}
+                    
+                    <div style="margin-top: 15px; display: flex; justify-content: flex-end; gap: 10px;">
+                        <button class="btn btn-secondary" onclick="printGRN('${grn.id}')" style="padding: 8px 16px; font-size: 12px;">
+                            <i class="fas fa-print"></i> Print
+                        </button>
+                        <button class="btn btn-danger" onclick="deleteGRN('${grn.id}')" style="padding: 8px 16px; font-size: 12px;">
+                            <i class="fas fa-trash"></i> Delete
+                        </button>
+                    </div>
                 </div>
             `).join('');
         }
 
-        function filterGRN() {
-            // Implementation for filtering GRN by date and supplier
-            renderGRN();
+        function deleteGRN(id) {
+            if (!confirm('Are you sure you want to delete this GRN? This will revert the stock changes.')) return;
+            
+            const grn = inventoryData.grnHistory.find(g => g.id === id);
+            if (grn) {
+                // Revert stock
+                grn.items.forEach(item => {
+                    const ingredient = inventoryData.ingredients.find(i => i.id === item.ingredientId);
+                    if (ingredient) {
+                        ingredient.currentStock -= item.qty;
+                        if (ingredient.currentStock < 0) ingredient.currentStock = 0;
+                    }
+                });
+                
+                inventoryData.grnHistory = inventoryData.grnHistory.filter(g => g.id !== id);
+                renderGRN();
+                renderIngredients();
+                refreshDashboard();
+            }
+        }
+
+        function printGRN(id) {
+            const grn = inventoryData.grnHistory.find(g => g.id === id);
+            if (!grn) return;
+            
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>GRN ${grn.grnNumber}</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; padding: 40px; }
+                        .header { text-align: center; margin-bottom: 30px; }
+                        .grn-title { font-size: 24px; font-weight: bold; color: #059669; }
+                        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+                        th { background: #f8fafc; }
+                        .total { text-align: right; font-size: 20px; font-weight: bold; margin-top: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <div class="grn-title">GOODS RECEIPT NOTE</div>
+                        <div style="font-size: 18px; margin-top: 10px;">${grn.grnNumber}</div>
+                    </div>
+                    <div style="margin-bottom: 20px;">
+                        <strong>Date:</strong> ${formatDate(grn.date)}<br>
+                        <strong>Supplier:</strong> ${grn.supplier}<br>
+                        ${grn.invoiceNumber ? `<strong>Invoice #:</strong> ${grn.invoiceNumber}<br>` : ''}
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Item</th>
+                                <th>Quantity</th>
+                                <th>Unit Cost</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${grn.items.map((item, idx) => `
+                                <tr>
+                                    <td>${idx + 1}</td>
+                                    <td>${item.name}</td>
+                                    <td>${item.qty} ${item.unit}</td>
+                                    <td>Rs ${item.unitCost.toFixed(2)}</td>
+                                    <td>Rs ${item.total.toFixed(2)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    <div class="total">
+                        Total: Rs ${grn.total.toFixed(2)}
+                    </div>
+                    ${grn.notes ? `<div style="margin-top: 20px; padding: 10px; background: #fef3c7;"><strong>Notes:</strong> ${grn.notes}</div>` : ''}
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+            printWindow.print();
         }
 
         // ==========================================
