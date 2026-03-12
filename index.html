@@ -9,6 +9,35 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
+    <!-- ADD FIREBASE SCRIPT HERE -->
+    <script type="module">
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+      const firebaseConfig = {
+        apiKey: "AIzaSyAJ29hHBF3Wcly3pIeozqC4m38czYXGVU0",
+        authDomain: "consumption-5160e.firebaseapp.com",
+        databaseURL: "https://consumption-5160e-default-rtdb.firebaseio.com",
+        projectId: "consumption-5160e",
+        storageBucket: "consumption-5160e.firebasestorage.app",
+        messagingSenderId: "744018780980",
+        appId: "1:744018780980:web:7eb8aa7b862e3dc99e7b61",
+        measurementId: "G-6KVH681CQS"
+      };
+
+      const app = initializeApp(firebaseConfig);
+      const db = getDatabase(app);
+      
+      // Make Firebase available globally
+      window.firebaseDB = db;
+      window.firebaseRef = ref;
+      window.firebaseSet = set;
+      window.firebaseGet = get;
+      window.firebaseOnValue = onValue;
+      
+      console.log('Firebase initialized');
+    </script>
+    <!-- END FIREBASE SCRIPT -->
         * {
             margin: 0;
             padding: 0;
@@ -110,6 +139,11 @@
             background: var(--success);
             color: white;
         }
+        
+        .btn-warning {
+    background: var(--warning);
+    color: white;
+}
         
         /* Navigation Tabs */
         .nav-tabs {
@@ -554,6 +588,39 @@
             background: #f8fafc;
             border-radius: 10px;
         }
+        /* Offline Status Indicator */
+        .offline-indicator {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #10b981;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 50px;
+            font-weight: 700;
+            font-size: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .offline-indicator i {
+            font-size: 14px;
+        }
+        
+        /* Data Management Card */
+        .data-actions {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+        @media (max-width: 600px) {
+            .data-actions {
+                grid-template-columns: 1fr;
+            }
+        }
         
         /* GRN Card */
         .grn-card {
@@ -662,6 +729,10 @@
         }
     </style>
 </head>
+<!-- Offline Status Indicator -->
+    <div class="offline-indicator" id="offline-status">
+        <i class="fas fa-wifi-slash"></i> OFFLINE MODE - Data Saved Locally
+    </div>
 <body>
 
     <!-- Header -->
@@ -1057,8 +1128,9 @@
             </div>
             <div class="modal-body">
                 <form id="recipe-form" onsubmit="saveRecipe(event)">
-                    <div class="form-row">
-                        <div class="form-group">
+    <input type="hidden" id="edit-recipe-id">
+    <div class="form-row">
+        <div class="form-group">
                             <label class="form-label">Recipe Name</label>
                             <input type="text" class="form-input" name="name" required placeholder="e.g., Zinger Burger">
                         </div>
@@ -1269,215 +1341,311 @@
         </div>
     </div>
 
-    <script>
+        <script>
         // ==========================================
-        // DATA STORE
+// FIREBASE DATA PERSISTENCE
+// ==========================================
+
+const STORAGE_KEY = 'ovenX_inventory_data_v1';
+
+function isFirebaseReady() {
+    return window.firebaseDB !== undefined;
+}
+
+async function loadDataFromStorage() {
+    if (isFirebaseReady()) {
+        try {
+            const db = window.firebaseDB;
+            const dataRef = window.firebaseRef(db, 'ovenx/inventory');
+            const snapshot = await window.firebaseGet(dataRef);
+            
+            if (snapshot.exists()) {
+                console.log('✅ Data loaded from Firebase');
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot.val()));
+                return snapshot.val();
+            }
+        } catch (err) {
+            console.error('Firebase load failed:', err);
+        }
+    }
+    
+    try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+            console.log('Data loaded from LocalStorage');
+            return JSON.parse(stored);
+        }
+    } catch (e) {
+        console.error('Error loading from LocalStorage:', e);
+    }
+    return null;
+}
+
+async function saveDataToStorage() {
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(inventoryData));
+    } catch (e) {
+        console.error('LocalStorage backup failed:', e);
+    }
+    
+    if (isFirebaseReady()) {
+        try {
+            const db = window.firebaseDB;
+            const dataRef = window.firebaseRef(db, 'ovenx/inventory');
+            await window.firebaseSet(dataRef, inventoryData);
+            console.log('✅ Data saved to Firebase');
+            showSaveNotification();
+            return;
+        } catch (err) {
+            console.error('Firebase save failed:', err);
+        }
+    }
+    showSaveNotification();
+}
+
+function enableRealtimeSync() {
+    if (!isFirebaseReady()) return;
+    const db = window.firebaseDB;
+    const dataRef = window.firebaseRef(db, 'ovenx/inventory');
+    window.firebaseOnValue(dataRef, (snapshot) => {
+        if (snapshot.exists()) {
+            const data = snapshot.val();
+            if (JSON.stringify(data) !== JSON.stringify(inventoryData)) {
+                console.log('🔄 Real-time update received');
+                inventoryData = data;
+                refreshDashboard();
+                renderIngredients();
+                renderRecipes();
+                renderGRN();
+            }
+        }
+    });
+}
         // ==========================================
-        const inventoryData = {
-            ingredients: [],
-            recipes: [],
-            grnHistory: [],
-            consumptionLog: [],
-            closingHistory: []
-        };
+// DATA STORE
+// ==========================================
 
-        // Sample Data
-        const sampleIngredients = [
-    { id: 165, name: "Chipotle Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 0.98, supplier: "", location: "" },
-    { id: 166, name: "BBQ Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 1.59, supplier: "", location: "" },
-    { id: 168, name: "Special Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 1.00, supplier: "", location: "" },
-    { id: 169, name: "Creamy Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 0.93, supplier: "", location: "" },
-    { id: 170, name: "BonFire Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 0.84, supplier: "", location: "" },
-    { id: 171, name: "Peri Peri Pizza", category: "sauce", unit: "g", currentStock: 0, minLevel: 5000, costPerUnit: 0.75, supplier: "", location: "" },
-    { id: 172, name: "Mexican Burger Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 0.82, supplier: "", location: "" },
-    { id: 173, name: "Peri Peri Burger Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 0.93, supplier: "", location: "" },
-    { id: 174, name: "Chilli Mayo Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 0.934, supplier: "", location: "" },
-    { id: 175, name: "Mexican Stake Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 0.88, supplier: "", location: "" },
-    { id: 176, name: "Dough Blend", category: "pizza dough", unit: "pkt", currentStock: 0, minLevel: 30, costPerUnit: 300, supplier: "", location: "" },
-    { id: 177, name: "Red Spice", category: "spices", unit: "pkt", currentStock: 0, minLevel: 15, costPerUnit: 150, supplier: "", location: "" },
-    { id: 178, name: "Fajita", category: "chicken", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 1.571, supplier: "", location: "" },
-    { id: 179, name: "Mughlai", category: "chicken", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 1.571, supplier: "", location: "" },
-    { id: 180, name: "Tikka", category: "chicken", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 1.571, supplier: "", location: "" },
-    { id: 181, name: "Malai", category: "chicken", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 1.571, supplier: "", location: "" },
-    { id: 182, name: "Bonless Thigh Zinger", category: "chicken", unit: "pcs", currentStock: 0, minLevel: 40, costPerUnit: 131.7, supplier: "", location: "" },
-    { id: 183, name: "Wings", category: "chicken", unit: "pcs", currentStock: 0, minLevel: 40, costPerUnit: 72.9, supplier: "", location: "" },
-    { id: 184, name: "Seekh Kabab", category: "chicken", unit: "g", currentStock: 0, minLevel: 32, costPerUnit: 1.722, supplier: "", location: "" },
-    { id: 185, name: "Burger Patty", category: "chicken", unit: "pcs", currentStock: 0, minLevel: 28, costPerUnit: 70, supplier: "", location: "" },
-    { id: 186, name: "Nuggets", category: "chicken", unit: "pcs", currentStock: 0, minLevel: 110, costPerUnit: 23.29, supplier: "", location: "" },
-    { id: 187, name: "Chapli", category: "chicken", unit: "pcs", currentStock: 0, minLevel: 24, costPerUnit: 79.5, supplier: "", location: "" },
-    { id: 188, name: "Saucages Small", category: "chicken", unit: "pcs", currentStock: 0, minLevel: 32, costPerUnit: 37, supplier: "", location: "" },
-    { id: 189, name: "Hot Shot", category: "chicken", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 1.115, supplier: "", location: "" },
-    { id: 190, name: "Burger Fillet", category: "chicken", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 1.115, supplier: "", location: "" },
-    { id: 191, name: "Stake Fillit", category: "chicken", unit: "pcs", currentStock: 0, minLevel: 72, costPerUnit: 150, supplier: "", location: "" },
-    { id: 192, name: "Cheese Slice", category: "cheese", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 29.80, supplier: "", location: "" },
-    { id: 193, name: "Butter Fresh", category: "butter", unit: "g", currentStock: 0, minLevel: 1800, costPerUnit: 0.611, supplier: "", location: "" },
-    { id: 194, name: "Crispy Popits", category: "chicken", unit: "g", currentStock: 0, minLevel: 6000, costPerUnit: 1.152, supplier: "", location: "" },
-    { id: 195, name: "Lui Paste", category: "paste", unit: "g", currentStock: 0, minLevel: 6400, costPerUnit: 0.463, supplier: "", location: "" },
-    { id: 196, name: "Jalapeno", category: "vegetables", unit: "g", currentStock: 0, minLevel: 6240, costPerUnit: 0.673, supplier: "", location: "" },
-    { id: 197, name: "Black Olives", category: "vegetables", unit: "g", currentStock: 0, minLevel: 3030, costPerUnit: 1.713, supplier: "", location: "" },
-    { id: 198, name: "Mushrooms", category: "vegetables", unit: "g", currentStock: 0, minLevel: 6000, costPerUnit: 0.925, supplier: "", location: "" },
-    { id: 199, name: "Mayonaise", category: "mayo", unit: "g", currentStock: 0, minLevel: 7728, costPerUnit: 0.703, supplier: "", location: "" },
-    { id: 200, name: "Cooking Oil", category: "oil", unit: "ml", currentStock: 0, minLevel: 4500, costPerUnit: 0.60, supplier: "", location: "" },
-    { id: 201, name: "Deep Frying Oil", category: "oil", unit: "ml", currentStock: 0, minLevel: 14400, costPerUnit: 0.528, supplier: "", location: "" },
-    { id: 202, name: "Olpers Milk", category: "milk", unit: "ml", currentStock: 0, minLevel: 5400, costPerUnit: 0.333, supplier: "", location: "" },
-    { id: 203, name: "Milk Pack Cream", category: "cream", unit: "ml", currentStock: 0, minLevel: 6, costPerUnit: 1.075, supplier: "", location: "" },
-    { id: 204, name: "Egg", category: "egg", unit: "pcs", currentStock: 0, minLevel: 15, costPerUnit: 28.33, supplier: "", location: "" },
-    { id: 205, name: "Pasta", category: "pasta", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 1.24, supplier: "", location: "" },
-    { id: 206, name: "Elbow Macroni", category: "macroni", unit: "g", currentStock: 0, minLevel: 3000, costPerUnit: 0.235, supplier: "", location: "" },
-    { id: 207, name: "Bread Crumbs", category: "bread", unit: "g", currentStock: 0, minLevel: 3000, costPerUnit: 0.85, supplier: "", location: "" },
-    { id: 208, name: "Tabasco", category: "sauce", unit: "ml", currentStock: 0, minLevel: 240, costPerUnit: 11, supplier: "", location: "" },
-    { id: 209, name: "Symbolic Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 570, costPerUnit: 1.90, supplier: "", location: "" },
-    { id: 210, name: "Pickle Cucumber", category: "pickle", unit: "g", currentStock: 0, minLevel: 650, costPerUnit: 1.50, supplier: "", location: "" },
-    { id: 211, name: "Chicken Powder", category: "powder", unit: "g", currentStock: 0, minLevel: 250, costPerUnit: 1.10, supplier: "", location: "" },
-    { id: 212, name: "White Pepper Whole", category: "pepper", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 2.65, supplier: "", location: "" },
-    { id: 213, name: "Black Pepper Whole", category: "pepper", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 2.45, supplier: "", location: "" },
-    { id: 214, name: "White Seeds", category: "seeds", unit: "g", currentStock: 0, minLevel: 250, costPerUnit: 0.33, supplier: "", location: "" },
-    { id: 215, name: "Salt", category: "salt", unit: "g", currentStock: 0, minLevel: 1600, costPerUnit: 0.075, supplier: "", location: "" },
-    { id: 216, name: "Chili Crush", category: "spices", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 1.10, supplier: "", location: "" },
-    { id: 217, name: "Flour Maida", category: "flour", unit: "g", currentStock: 0, minLevel: 25000, costPerUnit: 0.145, supplier: "", location: "" },
-    { id: 218, name: "Chili Garlic Sauce", category: "sauce", unit: "ml", currentStock: 0, minLevel: 4, costPerUnit: 0.316, supplier: "", location: "" },
-    { id: 219, name: "Black Seed Bun", category: "bread", unit: "pcs", currentStock: 0, minLevel: 30, costPerUnit: 37.5, supplier: "", location: "" },
-    { id: 220, name: "Potato Bun", category: "bread", unit: "pcs", currentStock: 0, minLevel: 20, costPerUnit: 47, supplier: "", location: "" },
-    { id: 221, name: "Sandwich Bread", category: "bread", unit: "pcs", currentStock: 0, minLevel: 32, costPerUnit: 15.63, supplier: "", location: "" },
-    { id: 222, name: "Tortilla Bread", category: "bread", unit: "pcs", currentStock: 0, minLevel: 16, costPerUnit: 37.13, supplier: "", location: "" },
-    { id: 223, name: "Paratha", category: "bread", unit: "pcs", currentStock: 0, minLevel: 40, costPerUnit: 42.2, supplier: "", location: "" },
-    { id: 224, name: "Honey", category: "honey", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 1.20, supplier: "", location: "" },
-    { id: 225, name: "Onion", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.10, supplier: "", location: "" },
-    { id: 226, name: "Potato", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.10, supplier: "", location: "" },
-    { id: 227, name: "Tomato", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.08, supplier: "", location: "" },
-    { id: 228, name: "Ice Berg", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.45, supplier: "", location: "" },
-    { id: 229, name: "Fresh Been", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.40, supplier: "", location: "" },
-    { id: 230, name: "Zarkoni", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.25, supplier: "", location: "" },
-    { id: 231, name: "Brookli", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 1.20, supplier: "", location: "" },
-    { id: 232, name: "Capsicum", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.20, supplier: "", location: "" },
-    { id: 233, name: "Cuccumber", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.06, supplier: "", location: "" },
-    { id: 234, name: "Cabbage", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.04, supplier: "", location: "" },
-    { id: 235, name: "Carrot", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.05, supplier: "", location: "" },
-    { id: 236, name: "Garlic Cloves", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.42, supplier: "", location: "" },
-    { id: 237, name: "Apple", category: "fruits", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.35, supplier: "", location: "" },
-    { id: 238, name: "T.A Bag Small", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 10, supplier: "", location: "" },
-    { id: 239, name: "T.A Bag Large", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 15, supplier: "", location: "" },
-    { id: 240, name: "F1 Lid", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 4, supplier: "", location: "" },
-    { id: 241, name: "F2 Lid", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 5, supplier: "", location: "" },
-    { id: 242, name: "F1 Box", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 10, supplier: "", location: "" },
-    { id: 243, name: "F2 Box", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 19, supplier: "", location: "" },
-    { id: 244, name: "Butter Paper Small", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 4, supplier: "", location: "" },
-    { id: 245, name: "Butter Paper Large", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 7, supplier: "", location: "" },
-    { id: 246, name: "Burger Box", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 15, supplier: "", location: "" },
-    { id: 247, name: "Pizza Box Small", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 22, supplier: "", location: "" },
-    { id: 248, name: "Pizza Box Medium", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 32, supplier: "", location: "" },
-    { id: 249, name: "Pizza Box Large", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 42, supplier: "", location: "" },
-    { id: 250, name: "Fork", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 1.40, supplier: "", location: "" },
-    { id: 251, name: "Milky Spoon", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 1.40, supplier: "", location: "" },
-    { id: 252, name: "Knife", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 1.40, supplier: "", location: "" },
-    { id: 253, name: "Pizza Table", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 1, supplier: "", location: "" },
-    { id: 254, name: "Napkin Tissue", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 1, supplier: "", location: "" },
-    { id: 255, name: "Chilli Sachet", category: "ketchup", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 3.66, supplier: "", location: "" },
-    { id: 256, name: "Tomato Sachet", category: "ketchup", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 3.66, supplier: "", location: "" },
-    { id: 257, name: "Mint", category: "vegetables", unit: "g", currentStock: 0, minLevel: 250, costPerUnit: 0.06, supplier: "", location: "" },
-    { id: 258, name: "Lemon", category: "vegetables", unit: "g", currentStock: 0, minLevel: 250, costPerUnit: 0.06, supplier: "", location: "" },
-    { id: 259, name: "Lemon Powder", category: "powder", unit: "g", currentStock: 0, minLevel: 200, costPerUnit: 2.625, supplier: "", location: "" },
-    { id: 260, name: "Lemon Squash", category: "liquid", unit: "ml", currentStock: 0, minLevel: 1600, costPerUnit: 0.563, supplier: "", location: "" },
-    { id: 261, name: "Black Salt", category: "spices", unit: "g", currentStock: 0, minLevel: 250, costPerUnit: 0.80, supplier: "", location: "" },
-    { id: 262, name: "Sugar", category: "sugar", unit: "g", currentStock: 0, minLevel: 1000, costPerUnit: 0.19, supplier: "", location: "" },
-    { id: 263, name: "Strawberry Syrup", category: "liquid", unit: "g", currentStock: 0, minLevel: 623, costPerUnit: 0.88, supplier: "", location: "" },
-    { id: 264, name: "Blueberry Syrup", category: "liquid", unit: "g", currentStock: 0, minLevel: 623, costPerUnit: 0.88, supplier: "", location: "" },
-    { id: 265, name: "Fries", category: "fries", unit: "g", currentStock: 0, minLevel: 12500, costPerUnit: 0.455, supplier: "", location: "" },
-    { id: 266, name: "Coke 1 Liter", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 60, costPerUnit: 150, supplier: "", location: "" },
-    { id: 267, name: "Sprite 1 Liter", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 60, costPerUnit: 150, supplier: "", location: "" },
-    { id: 268, name: "Coke Buddy", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 100, costPerUnit: 100, supplier: "", location: "" },
-    { id: 269, name: "Sprite Buddy", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 60, costPerUnit: 100, supplier: "", location: "" },
-    { id: 270, name: "Coke Tin Regular", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 24, costPerUnit: 130, supplier: "", location: "" },
-    { id: 271, name: "Coke Tin Sugar Free", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 24, costPerUnit: 130, supplier: "", location: "" },
-    { id: 272, name: "Sprite Tin Regular", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 24, costPerUnit: 130, supplier: "", location: "" },
-    { id: 273, name: "Sprite Tin Sugar Free", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 24, costPerUnit: 130, supplier: "", location: "" },
-    { id: 274, name: "KOT Printer Roll L", category: "stationery", unit: "pcs", currentStock: 0, minLevel: 6, costPerUnit: 160, supplier: "", location: "" },
-    { id: 275, name: "KOT Printer Roll S", category: "stationery", unit: "pcs", currentStock: 0, minLevel: 6, costPerUnit: 80, supplier: "", location: "" },
-    { id: 276, name: "Cold Drink Bag", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 1.50, supplier: "", location: "" },
-    { id: 277, name: "Paper Rim", category: "stationery", unit: "pcs", currentStock: 0, minLevel: 50, costPerUnit: 4, supplier: "", location: "" },
-    { id: 278, name: "Ball Pen", category: "stationery", unit: "pcs", currentStock: 0, minLevel: 10, costPerUnit: 20, supplier: "", location: "" },
-    { id: 279, name: "Stepler Pin", category: "stationery", unit: "box", currentStock: 0, minLevel: 2, costPerUnit: 70, supplier: "", location: "" },
-    { id: 280, name: "Mocktail Straw", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 1, supplier: "", location: "" },
-    { id: 281, name: "Packing Straw", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 0.90, supplier: "", location: "" },
-    { id: 282, name: "Lemon Max Liquid", category: "dish washing", unit: "bottle", currentStock: 0, minLevel: 5, costPerUnit: 365, supplier: "", location: "" },
-    { id: 283, name: "Scotch Brite", category: "dish washing", unit: "pkt", currentStock: 0, minLevel: 3, costPerUnit: 290, supplier: "", location: "" },
-    { id: 284, name: "Lemon Max Soap", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 5, costPerUnit: 150, supplier: "", location: "" },
-    { id: 285, name: "Hand Wash Liquid", category: "dish washing", unit: "bottle", currentStock: 0, minLevel: 5, costPerUnit: 175, supplier: "", location: "" },
-    { id: 286, name: "Tissue Roll", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 12, costPerUnit: 35, supplier: "", location: "" },
-    { id: 287, name: "Towel Tissue", category: "dish washing", unit: "pkt", currentStock: 0, minLevel: 10, costPerUnit: 190, supplier: "", location: "" },
-    { id: 288, name: "Air Freshner", category: "dish washing", unit: "bottle", currentStock: 0, minLevel: 3, costPerUnit: 275, supplier: "", location: "" },
-    { id: 289, name: "Glint", category: "dish washing", unit: "bottle", currentStock: 0, minLevel: 3, costPerUnit: 175, supplier: "", location: "" },
-    { id: 290, name: "Dry Mop", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 2, costPerUnit: 700, supplier: "", location: "" },
-    { id: 291, name: "Dry Mop Towel", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 2, costPerUnit: 370, supplier: "", location: "" },
-    { id: 292, name: "Wipper", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 2, costPerUnit: 1300, supplier: "", location: "" },
-    { id: 293, name: "Newspaper", category: "dish washing", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.23, supplier: "", location: "" },
-    { id: 294, name: "Bin Liner", category: "dish washing", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.55, supplier: "", location: "" },
-    { id: 295, name: "Zipper Bag", category: "dispossible", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.65, supplier: "", location: "" },
-    { id: 296, name: "Pasta Bag", category: "dispossible", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.50, supplier: "", location: "" },
-    { id: 297, name: "Scotch Tape", category: "stationery", unit: "pcs", currentStock: 0, minLevel: 2, costPerUnit: 130, supplier: "", location: "" },
-    { id: 298, name: "Dough Blend Bag", category: "dispossible", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.50, supplier: "", location: "" },
-    { id: 299, name: "Cling Filling", category: "dispossible", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 0.55, supplier: "", location: "" },
-    { id: 300, name: "Harpic Cleaner", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 2, costPerUnit: 1150, supplier: "", location: "" },
-    { id: 301, name: "Head Wizer", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 1.50, supplier: "", location: "" },
-    { id: 302, name: "Surgical Gloves", category: "dish washing", unit: "pkt", currentStock: 0, minLevel: 1, costPerUnit: 12, supplier: "", location: "" },
-    { id: 303, name: "Steppler", category: "stationery", unit: "pcs", currentStock: 0, minLevel: 2, costPerUnit: 500, supplier: "", location: "" },
-    { id: 304, name: "Phenyl", category: "dish washing", unit: "bottle", currentStock: 0, minLevel: 2, costPerUnit: 250, supplier: "", location: "" },
-    { id: 305, name: "Face Mask", category: "dish washing", unit: "pkt", currentStock: 0, minLevel: 2, costPerUnit: 0.15, supplier: "", location: "" },
-    { id: 306, name: "P1 Dip", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 50, costPerUnit: 3, supplier: "", location: "" },
-    { id: 307, name: "Wipper Towel", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 2, costPerUnit: 270, supplier: "", location: "" },
-    { id: 308, name: "Duster", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 1, costPerUnit: 16.66, supplier: "", location: "" },
-    { id: 309, name: "Water Regular", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 100, costPerUnit: 60, supplier: "", location: "" },
-    { id: 310, name: "Water 1.5 Liter", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 100, costPerUnit: 120, supplier: "", location: "" },
-    { id: 311, name: "Butter Paper Plain", category: "dispossible", unit: "pkt", currentStock: 0, minLevel: 2, costPerUnit: 475, supplier: "", location: "" },
-    { id: 312, name: "Ring Rubber", category: "stationery", unit: "pkt", currentStock: 0, minLevel: 1, costPerUnit: 650, supplier: "", location: "" },
-    { id: 313, name: "Rice", category: "rice", unit: "g", currentStock: 0, minLevel: 5000, costPerUnit: 0.38, supplier: "", location: "" },
-    { id: 314, name: "Red Chilli Powder", category: "spices", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 1.10, supplier: "", location: "" },
-    { id: 315, name: "Wahsing Powder", category: "dish washing", unit: "pkt", currentStock: 0, minLevel: 5, costPerUnit: 50, supplier: "", location: "" },
-    { id: 316, name: "Scrapper Brush", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 2, costPerUnit: 700, supplier: "", location: "" },
-    { id: 317, name: "Domlet Glass 12", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 50, costPerUnit: 10, supplier: "", location: "" },
-    { id: 318, name: "KOT Book", category: "stationary", unit: "pcs", currentStock: 0, minLevel: 10, costPerUnit: 200, supplier: "", location: "" },
-    { id: 319, name: "Scotch Brite Steel", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 3, costPerUnit: 100, supplier: "", location: "" },
-    { id: 320, name: "Grill Brush", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 1, costPerUnit: 75, supplier: "", location: "" },
-    { id: 321, name: "Costic Soda", category: "dish washing", unit: "g", currentStock: 0, minLevel: 5000, costPerUnit: 0.28, supplier: "", location: "" },
-    { id: 322, name: "Cheese Set", category: "cheese", unit: "g", currentStock: 0, minLevel: 12000, costPerUnit: 1.308, supplier: "", location: "" },
-    { id: 323, name: "Tomato Ketchup", category: "ketchup", unit: "g", currentStock: 0, minLevel: 8000, costPerUnit: 0.325, supplier: "", location: "" },
-    { id: 324, name: "Chilli Garlic", category: "ketchup", unit: "g", currentStock: 0, minLevel: 8000, costPerUnit: 0.325, supplier: "", location: "" },
-    { id: 325, name: "Breading", category: "white flour", unit: "g", currentStock: 0, minLevel: 20000, costPerUnit: 0.14, supplier: "", location: "" },
-    { id: 326, name: "Red Mild Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 1000, costPerUnit: 0.60, supplier: "", location: "" },
-    { id: 327, name: "Coleslaw Dip", category: "sauce", unit: "pcs", currentStock: 0, minLevel: 20, costPerUnit: 50, supplier: "", location: "" },
-    { id: 328, name: "Steak Veg", category: "vegetables", unit: "pcs", currentStock: 0, minLevel: 20, costPerUnit: 80, supplier: "", location: "" },
-    { id: 329, name: "White Pepper Powder", category: "spices", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 3, supplier: "", location: "" },
-    { id: 330, name: "Black Pepper Powder", category: "spices", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 3, supplier: "", location: "" },
-    { id: 331, name: "Garlic Powder", category: "spices", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 2, supplier: "", location: "" },
-    { id: 332, name: "Organo Flakes", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.625, supplier: "", location: "" },
-    { id: 333, name: "Fanta 1 Liter", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 60, costPerUnit: 150, supplier: "", location: "" },
-    { id: 334, name: "Cold Drink Straw", category: "beverages", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 1.50, supplier: "", location: "" },
-    { id: 335, name: "Ice", category: "ice", unit: "g", currentStock: 0, minLevel: 1000, costPerUnit: 0.20, supplier: "", location: "" },
-    { id: 336, name: "Sprite for Mocktail", category: "beverages", unit: "ml", currentStock: 0, minLevel: 300, costPerUnit: 0.15, supplier: "", location: "" },
-    { id: 337, name: "Food Color Blue", category: "liquid", unit: "ml", currentStock: 0, minLevel: 100, costPerUnit: 2, supplier: "", location: "" },
-    { id: 338, name: "Pepsi 1 Liter", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 60, costPerUnit: 150, supplier: "", location: "" },
-    { id: 339, name: "Match Box", category: "kitchen", unit: "pcs", currentStock: 0, minLevel: 1, costPerUnit: 10, supplier: "", location: "" },
-    { id: 340, name: "Surf", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 2, costPerUnit: 50, supplier: "", location: "" },
-    { id: 342, name: "Plastic Bag (Shoper)", category: "dispossible", unit: "g", currentStock: 0, minLevel: 1, costPerUnit: 0.56, supplier: "", location: "" },
-    { id: 343, name: "Color Straw", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 1, costPerUnit: 1.40, supplier: "", location: "" },
-    { id: 344, name: "Umbrella Straw", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 1, costPerUnit: 2, supplier: "", location: "" },
-    { id: 345, name: "Glass Lid", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 10, costPerUnit: 2, supplier: "", location: "" },
-    { id: 346, name: "Gloves Plastic", category: "dispossible", unit: "pkt", currentStock: 0, minLevel: 1, costPerUnit: 0.50, supplier: "", location: "" },
-    { id: 352, name: "Bambo Stick", category: "wooden stick", unit: "stick", currentStock: 0, minLevel: 1, costPerUnit: 0.70, supplier: "", location: "" },
-    { id: 353, name: "Tape", category: "stationary", unit: "pcs", currentStock: 0, minLevel: 1, costPerUnit: 120, supplier: "", location: "" },
-    { id: 355, name: "Coment Card", category: "stationary", unit: "pcs", currentStock: 0, minLevel: 50, costPerUnit: 6, supplier: "", location: "" },
-    { id: 356, name: "Sambolic", category: "sauce", unit: "g", currentStock: 0, minLevel: 150, costPerUnit: 2.28, supplier: "", location: "" },
-    { id: 360, name: "Hygiene Tissue", category: "tissues", unit: "box", currentStock: 1, minLevel: 10, costPerUnit: 170, supplier: "", location: "" },
-    { id: 361, name: "Pickle", category: "raw materials", unit: "kg", currentStock: 1, minLevel: 10, costPerUnit: 630, supplier: "", location: "" },
-    { id: 362, name: "Malai Chicken", category: "raw materials", unit: "kg", currentStock: 1, minLevel: 10, costPerUnit: 1400, supplier: "", location: "" },
-    { id: 363, name: "Chicken", category: "raw materials", unit: "kg", currentStock: 0, minLevel: 10, costPerUnit: 0, supplier: "", location: "" },
-    { id: 364, name: "Cream", category: "raw materials", unit: "kg", currentStock: 1, minLevel: 10, costPerUnit: 220, supplier: "", location: "" },
-    { id: 369, name: "Oil", category: "raw materials", unit: "kg", currentStock: 1, minLevel: 10, costPerUnit: 510, supplier: "", location: "" },
-    { id: 434, name: "Milk (Liquid)", category: "raw materials", unit: "kg", currentStock: 1, minLevel: 0, costPerUnit: 450, supplier: "", location: "" }
-];
+// Try to load from storage first
+let storedData = loadDataFromStorage();
 
-        const sampleRecipes = [
-            {
+// Check if stored data has ANY content (ingredients OR recipes OR GRN history)
+const hasUserData = storedData && (
+    (storedData.ingredients && storedData.ingredients.some(i => i.currentStock > 0 || i.costPerUnit > 0)) ||
+    (storedData.grnHistory && storedData.grnHistory.length > 0) ||
+    (storedData.recipes && storedData.recipes.length > 0)
+);
+
+// Initialize inventoryData
+let inventoryData;
+
+if (!hasUserData) {
+    // No user data found - load sample data for first-time use
+    console.log('No user data found, loading sample data...');
+    
+    inventoryData = {
+        ingredients: [],
+        recipes: [],
+        grnHistory: [],
+        consumptionLog: [],
+        closingHistory: []
+    };
+            // Your sample ingredients array here (keep your existing sampleIngredients)
+            const sampleIngredients = [
+                { id: 165, name: "Chipotle Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 0.98, supplier: "", location: "" },
+                { id: 166, name: "BBQ Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 1.59, supplier: "", location: "" },
+                { id: 168, name: "Special Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 1.00, supplier: "", location: "" },
+                { id: 169, name: "Creamy Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 0.93, supplier: "", location: "" },
+                { id: 170, name: "BonFire Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 0.84, supplier: "", location: "" },
+                { id: 171, name: "Peri Peri Pizza", category: "sauce", unit: "g", currentStock: 0, minLevel: 5000, costPerUnit: 0.75, supplier: "", location: "" },
+                { id: 172, name: "Mexican Burger Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 0.82, supplier: "", location: "" },
+                { id: 173, name: "Peri Peri Burger Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 0.93, supplier: "", location: "" },
+                { id: 174, name: "Chilli Mayo Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 0.934, supplier: "", location: "" },
+                { id: 175, name: "Mexican Stake Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 0.88, supplier: "", location: "" },
+                { id: 176, name: "Dough Blend", category: "pizza dough", unit: "pkt", currentStock: 0, minLevel: 30, costPerUnit: 300, supplier: "", location: "" },
+                { id: 177, name: "Red Spice", category: "spices", unit: "pkt", currentStock: 0, minLevel: 15, costPerUnit: 150, supplier: "", location: "" },
+                { id: 178, name: "Fajita", category: "chicken", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 1.571, supplier: "", location: "" },
+                { id: 179, name: "Mughlai", category: "chicken", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 1.571, supplier: "", location: "" },
+                { id: 180, name: "Tikka", category: "chicken", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 1.571, supplier: "", location: "" },
+                { id: 181, name: "Malai", category: "chicken", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 1.571, supplier: "", location: "" },
+                { id: 182, name: "Bonless Thigh Zinger", category: "chicken", unit: "pcs", currentStock: 0, minLevel: 40, costPerUnit: 131.7, supplier: "", location: "" },
+                { id: 183, name: "Wings", category: "chicken", unit: "pcs", currentStock: 0, minLevel: 40, costPerUnit: 72.9, supplier: "", location: "" },
+                { id: 184, name: "Seekh Kabab", category: "chicken", unit: "g", currentStock: 0, minLevel: 32, costPerUnit: 1.722, supplier: "", location: "" },
+                { id: 185, name: "Burger Patty", category: "chicken", unit: "pcs", currentStock: 0, minLevel: 28, costPerUnit: 70, supplier: "", location: "" },
+                { id: 186, name: "Nuggets", category: "chicken", unit: "pcs", currentStock: 0, minLevel: 110, costPerUnit: 23.29, supplier: "", location: "" },
+                { id: 187, name: "Chapli", category: "chicken", unit: "pcs", currentStock: 0, minLevel: 24, costPerUnit: 79.5, supplier: "", location: "" },
+                { id: 188, name: "Saucages Small", category: "chicken", unit: "pcs", currentStock: 0, minLevel: 32, costPerUnit: 37, supplier: "", location: "" },
+                { id: 189, name: "Hot Shot", category: "chicken", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 1.115, supplier: "", location: "" },
+                { id: 190, name: "Burger Fillet", category: "chicken", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 1.115, supplier: "", location: "" },
+                { id: 191, name: "Stake Fillit", category: "chicken", unit: "pcs", currentStock: 0, minLevel: 72, costPerUnit: 150, supplier: "", location: "" },
+                { id: 192, name: "Cheese Slice", category: "cheese", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 29.80, supplier: "", location: "" },
+                { id: 193, name: "Butter Fresh", category: "butter", unit: "g", currentStock: 0, minLevel: 1800, costPerUnit: 0.611, supplier: "", location: "" },
+                { id: 194, name: "Crispy Popits", category: "chicken", unit: "g", currentStock: 0, minLevel: 6000, costPerUnit: 1.152, supplier: "", location: "" },
+                { id: 195, name: "Lui Paste", category: "paste", unit: "g", currentStock: 0, minLevel: 6400, costPerUnit: 0.463, supplier: "", location: "" },
+                { id: 196, name: "Jalapeno", category: "vegetables", unit: "g", currentStock: 0, minLevel: 6240, costPerUnit: 0.673, supplier: "", location: "" },
+                { id: 197, name: "Black Olives", category: "vegetables", unit: "g", currentStock: 0, minLevel: 3030, costPerUnit: 1.713, supplier: "", location: "" },
+                { id: 198, name: "Mushrooms", category: "vegetables", unit: "g", currentStock: 0, minLevel: 6000, costPerUnit: 0.925, supplier: "", location: "" },
+                { id: 199, name: "Mayonaise", category: "mayo", unit: "g", currentStock: 0, minLevel: 7728, costPerUnit: 0.703, supplier: "", location: "" },
+                { id: 200, name: "Cooking Oil", category: "oil", unit: "ml", currentStock: 0, minLevel: 4500, costPerUnit: 0.60, supplier: "", location: "" },
+                { id: 201, name: "Deep Frying Oil", category: "oil", unit: "ml", currentStock: 0, minLevel: 14400, costPerUnit: 0.528, supplier: "", location: "" },
+                { id: 202, name: "Olpers Milk", category: "milk", unit: "ml", currentStock: 0, minLevel: 5400, costPerUnit: 0.333, supplier: "", location: "" },
+                { id: 203, name: "Milk Pack Cream", category: "cream", unit: "ml", currentStock: 0, minLevel: 6, costPerUnit: 1.075, supplier: "", location: "" },
+                { id: 204, name: "Egg", category: "egg", unit: "pcs", currentStock: 0, minLevel: 15, costPerUnit: 28.33, supplier: "", location: "" },
+                { id: 205, name: "Pasta", category: "pasta", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 1.24, supplier: "", location: "" },
+                { id: 206, name: "Elbow Macroni", category: "macroni", unit: "g", currentStock: 0, minLevel: 3000, costPerUnit: 0.235, supplier: "", location: "" },
+                { id: 207, name: "Bread Crumbs", category: "bread", unit: "g", currentStock: 0, minLevel: 3000, costPerUnit: 0.85, supplier: "", location: "" },
+                { id: 208, name: "Tabasco", category: "sauce", unit: "ml", currentStock: 0, minLevel: 240, costPerUnit: 11, supplier: "", location: "" },
+                { id: 209, name: "Symbolic Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 570, costPerUnit: 1.90, supplier: "", location: "" },
+                { id: 210, name: "Pickle Cucumber", category: "pickle", unit: "g", currentStock: 0, minLevel: 650, costPerUnit: 1.50, supplier: "", location: "" },
+                { id: 211, name: "Chicken Powder", category: "powder", unit: "g", currentStock: 0, minLevel: 250, costPerUnit: 1.10, supplier: "", location: "" },
+                { id: 212, name: "White Pepper Whole", category: "pepper", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 2.65, supplier: "", location: "" },
+                { id: 213, name: "Black Pepper Whole", category: "pepper", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 2.45, supplier: "", location: "" },
+                { id: 214, name: "White Seeds", category: "seeds", unit: "g", currentStock: 0, minLevel: 250, costPerUnit: 0.33, supplier: "", location: "" },
+                { id: 215, name: "Salt", category: "salt", unit: "g", currentStock: 0, minLevel: 1600, costPerUnit: 0.075, supplier: "", location: "" },
+                { id: 216, name: "Chili Crush", category: "spices", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 1.10, supplier: "", location: "" },
+                { id: 217, name: "Flour Maida", category: "flour", unit: "g", currentStock: 0, minLevel: 25000, costPerUnit: 0.145, supplier: "", location: "" },
+                { id: 218, name: "Chili Garlic Sauce", category: "sauce", unit: "ml", currentStock: 0, minLevel: 4, costPerUnit: 0.316, supplier: "", location: "" },
+                { id: 219, name: "Black Seed Bun", category: "bread", unit: "pcs", currentStock: 0, minLevel: 30, costPerUnit: 37.5, supplier: "", location: "" },
+                { id: 220, name: "Potato Bun", category: "bread", unit: "pcs", currentStock: 0, minLevel: 20, costPerUnit: 47, supplier: "", location: "" },
+                { id: 221, name: "Sandwich Bread", category: "bread", unit: "pcs", currentStock: 0, minLevel: 32, costPerUnit: 15.63, supplier: "", location: "" },
+                { id: 222, name: "Tortilla Bread", category: "bread", unit: "pcs", currentStock: 0, minLevel: 16, costPerUnit: 37.13, supplier: "", location: "" },
+                { id: 223, name: "Paratha", category: "bread", unit: "pcs", currentStock: 0, minLevel: 40, costPerUnit: 42.2, supplier: "", location: "" },
+                { id: 224, name: "Honey", category: "honey", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 1.20, supplier: "", location: "" },
+                { id: 225, name: "Onion", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.10, supplier: "", location: "" },
+                { id: 226, name: "Potato", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.10, supplier: "", location: "" },
+                { id: 227, name: "Tomato", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.08, supplier: "", location: "" },
+                { id: 228, name: "Ice Berg", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.45, supplier: "", location: "" },
+                { id: 229, name: "Fresh Been", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.40, supplier: "", location: "" },
+                { id: 230, name: "Zarkoni", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.25, supplier: "", location: "" },
+                { id: 231, name: "Brookli", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 1.20, supplier: "", location: "" },
+                { id: 232, name: "Capsicum", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.20, supplier: "", location: "" },
+                { id: 233, name: "Cuccumber", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.06, supplier: "", location: "" },
+                { id: 234, name: "Cabbage", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.04, supplier: "", location: "" },
+                { id: 235, name: "Carrot", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.05, supplier: "", location: "" },
+                { id: 236, name: "Garlic Cloves", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.42, supplier: "", location: "" },
+                { id: 237, name: "Apple", category: "fruits", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.35, supplier: "", location: "" },
+                { id: 238, name: "T.A Bag Small", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 10, supplier: "", location: "" },
+                { id: 239, name: "T.A Bag Large", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 15, supplier: "", location: "" },
+                { id: 240, name: "F1 Lid", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 4, supplier: "", location: "" },
+                { id: 241, name: "F2 Lid", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 5, supplier: "", location: "" },
+                { id: 242, name: "F1 Box", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 10, supplier: "", location: "" },
+                { id: 243, name: "F2 Box", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 19, supplier: "", location: "" },
+                { id: 244, name: "Butter Paper Small", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 4, supplier: "", location: "" },
+                { id: 245, name: "Butter Paper Large", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 7, supplier: "", location: "" },
+                { id: 246, name: "Burger Box", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 15, supplier: "", location: "" },
+                { id: 247, name: "Pizza Box Small", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 22, supplier: "", location: "" },
+                { id: 248, name: "Pizza Box Medium", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 32, supplier: "", location: "" },
+                { id: 249, name: "Pizza Box Large", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 42, supplier: "", location: "" },
+                { id: 250, name: "Fork", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 1.40, supplier: "", location: "" },
+                { id: 251, name: "Milky Spoon", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 1.40, supplier: "", location: "" },
+                { id: 252, name: "Knife", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 1.40, supplier: "", location: "" },
+                { id: 253, name: "Pizza Table", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 1, supplier: "", location: "" },
+                { id: 254, name: "Napkin Tissue", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 1, supplier: "", location: "" },
+                { id: 255, name: "Chilli Sachet", category: "ketchup", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 3.66, supplier: "", location: "" },
+                { id: 256, name: "Tomato Sachet", category: "ketchup", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 3.66, supplier: "", location: "" },
+                { id: 257, name: "Mint", category: "vegetables", unit: "g", currentStock: 0, minLevel: 250, costPerUnit: 0.06, supplier: "", location: "" },
+                { id: 258, name: "Lemon", category: "vegetables", unit: "g", currentStock: 0, minLevel: 250, costPerUnit: 0.06, supplier: "", location: "" },
+                { id: 259, name: "Lemon Powder", category: "powder", unit: "g", currentStock: 0, minLevel: 200, costPerUnit: 2.625, supplier: "", location: "" },
+                { id: 260, name: "Lemon Squash", category: "liquid", unit: "ml", currentStock: 0, minLevel: 1600, costPerUnit: 0.563, supplier: "", location: "" },
+                { id: 261, name: "Black Salt", category: "spices", unit: "g", currentStock: 0, minLevel: 250, costPerUnit: 0.80, supplier: "", location: "" },
+                { id: 262, name: "Sugar", category: "sugar", unit: "g", currentStock: 0, minLevel: 1000, costPerUnit: 0.19, supplier: "", location: "" },
+                { id: 263, name: "Strawberry Syrup", category: "liquid", unit: "g", currentStock: 0, minLevel: 623, costPerUnit: 0.88, supplier: "", location: "" },
+                { id: 264, name: "Blueberry Syrup", category: "liquid", unit: "g", currentStock: 0, minLevel: 623, costPerUnit: 0.88, supplier: "", location: "" },
+                { id: 265, name: "Fries", category: "fries", unit: "g", currentStock: 0, minLevel: 12500, costPerUnit: 0.455, supplier: "", location: "" },
+                { id: 266, name: "Coke 1 Liter", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 60, costPerUnit: 150, supplier: "", location: "" },
+                { id: 267, name: "Sprite 1 Liter", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 60, costPerUnit: 150, supplier: "", location: "" },
+                { id: 268, name: "Coke Buddy", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 100, costPerUnit: 100, supplier: "", location: "" },
+                { id: 269, name: "Sprite Buddy", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 60, costPerUnit: 100, supplier: "", location: "" },
+                { id: 270, name: "Coke Tin Regular", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 24, costPerUnit: 130, supplier: "", location: "" },
+                { id: 271, name: "Coke Tin Sugar Free", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 24, costPerUnit: 130, supplier: "", location: "" },
+                { id: 272, name: "Sprite Tin Regular", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 24, costPerUnit: 130, supplier: "", location: "" },
+                { id: 273, name: "Sprite Tin Sugar Free", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 24, costPerUnit: 130, supplier: "", location: "" },
+                { id: 274, name: "KOT Printer Roll L", category: "stationery", unit: "pcs", currentStock: 0, minLevel: 6, costPerUnit: 160, supplier: "", location: "" },
+                { id: 275, name: "KOT Printer Roll S", category: "stationery", unit: "pcs", currentStock: 0, minLevel: 6, costPerUnit: 80, supplier: "", location: "" },
+                { id: 276, name: "Cold Drink Bag", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 1.50, supplier: "", location: "" },
+                { id: 277, name: "Paper Rim", category: "stationery", unit: "pcs", currentStock: 0, minLevel: 50, costPerUnit: 4, supplier: "", location: "" },
+                { id: 278, name: "Ball Pen", category: "stationery", unit: "pcs", currentStock: 0, minLevel: 10, costPerUnit: 20, supplier: "", location: "" },
+                { id: 279, name: "Stepler Pin", category: "stationery", unit: "box", currentStock: 0, minLevel: 2, costPerUnit: 70, supplier: "", location: "" },
+                { id: 280, name: "Mocktail Straw", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 1, supplier: "", location: "" },
+                { id: 281, name: "Packing Straw", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 0.90, supplier: "", location: "" },
+                { id: 282, name: "Lemon Max Liquid", category: "dish washing", unit: "bottle", currentStock: 0, minLevel: 5, costPerUnit: 365, supplier: "", location: "" },
+                { id: 283, name: "Scotch Brite", category: "dish washing", unit: "pkt", currentStock: 0, minLevel: 3, costPerUnit: 290, supplier: "", location: "" },
+                { id: 284, name: "Lemon Max Soap", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 5, costPerUnit: 150, supplier: "", location: "" },
+                { id: 285, name: "Hand Wash Liquid", category: "dish washing", unit: "bottle", currentStock: 0, minLevel: 5, costPerUnit: 175, supplier: "", location: "" },
+                { id: 286, name: "Tissue Roll", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 12, costPerUnit: 35, supplier: "", location: "" },
+                { id: 287, name: "Towel Tissue", category: "dish washing", unit: "pkt", currentStock: 0, minLevel: 10, costPerUnit: 190, supplier: "", location: "" },
+                { id: 288, name: "Air Freshner", category: "dish washing", unit: "bottle", currentStock: 0, minLevel: 3, costPerUnit: 275, supplier: "", location: "" },
+                { id: 289, name: "Glint", category: "dish washing", unit: "bottle", currentStock: 0, minLevel: 3, costPerUnit: 175, supplier: "", location: "" },
+                { id: 290, name: "Dry Mop", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 2, costPerUnit: 700, supplier: "", location: "" },
+                { id: 291, name: "Dry Mop Towel", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 2, costPerUnit: 370, supplier: "", location: "" },
+                { id: 292, name: "Wipper", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 2, costPerUnit: 1300, supplier: "", location: "" },
+                { id: 293, name: "Newspaper", category: "dish washing", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.23, supplier: "", location: "" },
+                { id: 294, name: "Bin Liner", category: "dish washing", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.55, supplier: "", location: "" },
+                { id: 295, name: "Zipper Bag", category: "dispossible", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.65, supplier: "", location: "" },
+                { id: 296, name: "Pasta Bag", category: "dispossible", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.50, supplier: "", location: "" },
+                { id: 297, name: "Scotch Tape", category: "stationery", unit: "pcs", currentStock: 0, minLevel: 2, costPerUnit: 130, supplier: "", location: "" },
+                { id: 298, name: "Dough Blend Bag", category: "dispossible", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.50, supplier: "", location: "" },
+                { id: 299, name: "Cling Filling", category: "dispossible", unit: "g", currentStock: 0, minLevel: 2000, costPerUnit: 0.55, supplier: "", location: "" },
+                { id: 300, name: "Harpic Cleaner", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 2, costPerUnit: 1150, supplier: "", location: "" },
+                { id: 301, name: "Head Wizer", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 1.50, supplier: "", location: "" },
+                { id: 302, name: "Surgical Gloves", category: "dish washing", unit: "pkt", currentStock: 0, minLevel: 1, costPerUnit: 12, supplier: "", location: "" },
+                { id: 303, name: "Steppler", category: "stationery", unit: "pcs", currentStock: 0, minLevel: 2, costPerUnit: 500, supplier: "", location: "" },
+                { id: 304, name: "Phenyl", category: "dish washing", unit: "bottle", currentStock: 0, minLevel: 2, costPerUnit: 250, supplier: "", location: "" },
+                { id: 305, name: "Face Mask", category: "dish washing", unit: "pkt", currentStock: 0, minLevel: 2, costPerUnit: 0.15, supplier: "", location: "" },
+                { id: 306, name: "P1 Dip", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 50, costPerUnit: 3, supplier: "", location: "" },
+                { id: 307, name: "Wipper Towel", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 2, costPerUnit: 270, supplier: "", location: "" },
+                { id: 308, name: "Duster", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 1, costPerUnit: 16.66, supplier: "", location: "" },
+                { id: 309, name: "Water Regular", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 100, costPerUnit: 60, supplier: "", location: "" },
+                { id: 310, name: "Water 1.5 Liter", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 100, costPerUnit: 120, supplier: "", location: "" },
+                { id: 311, name: "Butter Paper Plain", category: "dispossible", unit: "pkt", currentStock: 0, minLevel: 2, costPerUnit: 475, supplier: "", location: "" },
+                { id: 312, name: "Ring Rubber", category: "stationery", unit: "pkt", currentStock: 0, minLevel: 1, costPerUnit: 650, supplier: "", location: "" },
+                { id: 313, name: "Rice", category: "rice", unit: "g", currentStock: 0, minLevel: 5000, costPerUnit: 0.38, supplier: "", location: "" },
+                { id: 314, name: "Red Chilli Powder", category: "spices", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 1.10, supplier: "", location: "" },
+                { id: 315, name: "Wahsing Powder", category: "dish washing", unit: "pkt", currentStock: 0, minLevel: 5, costPerUnit: 50, supplier: "", location: "" },
+                { id: 316, name: "Scrapper Brush", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 2, costPerUnit: 700, supplier: "", location: "" },
+                { id: 317, name: "Domlet Glass 12", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 50, costPerUnit: 10, supplier: "", location: "" },
+                { id: 318, name: "KOT Book", category: "stationary", unit: "pcs", currentStock: 0, minLevel: 10, costPerUnit: 200, supplier: "", location: "" },
+                { id: 319, name: "Scotch Brite Steel", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 3, costPerUnit: 100, supplier: "", location: "" },
+                { id: 320, name: "Grill Brush", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 1, costPerUnit: 75, supplier: "", location: "" },
+                { id: 321, name: "Costic Soda", category: "dish washing", unit: "g", currentStock: 0, minLevel: 5000, costPerUnit: 0.28, supplier: "", location: "" },
+                { id: 322, name: "Cheese Set", category: "cheese", unit: "g", currentStock: 0, minLevel: 12000, costPerUnit: 1.308, supplier: "", location: "" },
+                { id: 323, name: "Tomato Ketchup", category: "ketchup", unit: "g", currentStock: 0, minLevel: 8000, costPerUnit: 0.325, supplier: "", location: "" },
+                { id: 324, name: "Chilli Garlic", category: "ketchup", unit: "g", currentStock: 0, minLevel: 8000, costPerUnit: 0.325, supplier: "", location: "" },
+                { id: 325, name: "Breading", category: "white flour", unit: "g", currentStock: 0, minLevel: 20000, costPerUnit: 0.14, supplier: "", location: "" },
+                { id: 326, name: "Red Mild Sauce", category: "sauce", unit: "g", currentStock: 0, minLevel: 1000, costPerUnit: 0.60, supplier: "", location: "" },
+                { id: 327, name: "Coleslaw Dip", category: "sauce", unit: "pcs", currentStock: 0, minLevel: 20, costPerUnit: 50, supplier: "", location: "" },
+                { id: 328, name: "Steak Veg", category: "vegetables", unit: "pcs", currentStock: 0, minLevel: 20, costPerUnit: 80, supplier: "", location: "" },
+                { id: 329, name: "White Pepper Powder", category: "spices", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 3, supplier: "", location: "" },
+                { id: 330, name: "Black Pepper Powder", category: "spices", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 3, supplier: "", location: "" },
+                { id: 331, name: "Garlic Powder", category: "spices", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 2, supplier: "", location: "" },
+                { id: 332, name: "Organo Flakes", category: "vegetables", unit: "g", currentStock: 0, minLevel: 500, costPerUnit: 0.625, supplier: "", location: "" },
+                { id: 333, name: "Fanta 1 Liter", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 60, costPerUnit: 150, supplier: "", location: "" },
+                { id: 334, name: "Cold Drink Straw", category: "beverages", unit: "pcs", currentStock: 0, minLevel: 100, costPerUnit: 1.50, supplier: "", location: "" },
+                { id: 335, name: "Ice", category: "ice", unit: "g", currentStock: 0, minLevel: 1000, costPerUnit: 0.20, supplier: "", location: "" },
+                { id: 336, name: "Sprite for Mocktail", category: "beverages", unit: "ml", currentStock: 0, minLevel: 300, costPerUnit: 0.15, supplier: "", location: "" },
+                { id: 337, name: "Food Color Blue", category: "liquid", unit: "ml", currentStock: 0, minLevel: 100, costPerUnit: 2, supplier: "", location: "" },
+                { id: 338, name: "Pepsi 1 Liter", category: "beverages", unit: "bottle", currentStock: 0, minLevel: 60, costPerUnit: 150, supplier: "", location: "" },
+                { id: 339, name: "Match Box", category: "kitchen", unit: "pcs", currentStock: 0, minLevel: 1, costPerUnit: 10, supplier: "", location: "" },
+                { id: 340, name: "Surf", category: "dish washing", unit: "pcs", currentStock: 0, minLevel: 2, costPerUnit: 50, supplier: "", location: "" },
+                { id: 342, name: "Plastic Bag (Shoper)", category: "dispossible", unit: "g", currentStock: 0, minLevel: 1, costPerUnit: 0.56, supplier: "", location: "" },
+                { id: 343, name: "Color Straw", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 1, costPerUnit: 1.40, supplier: "", location: "" },
+                { id: 344, name: "Umbrella Straw", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 1, costPerUnit: 2, supplier: "", location: "" },
+                { id: 345, name: "Glass Lid", category: "dispossible", unit: "pcs", currentStock: 0, minLevel: 10, costPerUnit: 2, supplier: "", location: "" },
+                { id: 346, name: "Gloves Plastic", category: "dispossible", unit: "pkt", currentStock: 0, minLevel: 1, costPerUnit: 0.50, supplier: "", location: "" },
+                { id: 352, name: "Bambo Stick", category: "wooden stick", unit: "stick", currentStock: 0, minLevel: 1, costPerUnit: 0.70, supplier: "", location: "" },
+                { id: 353, name: "Tape", category: "stationary", unit: "pcs", currentStock: 0, minLevel: 1, costPerUnit: 120, supplier: "", location: "" },
+                { id: 355, name: "Coment Card", category: "stationary", unit: "pcs", currentStock: 0, minLevel: 50, costPerUnit: 6, supplier: "", location: "" },
+                { id: 356, name: "Sambolic", category: "sauce", unit: "g", currentStock: 0, minLevel: 150, costPerUnit: 2.28, supplier: "", location: "" },
+                { id: 360, name: "Hygiene Tissue", category: "tissues", unit: "box", currentStock: 1, minLevel: 10, costPerUnit: 170, supplier: "", location: "" },
+                { id: 361, name: "Pickle", category: "raw materials", unit: "kg", currentStock: 1, minLevel: 10, costPerUnit: 630, supplier: "", location: "" },
+                { id: 362, name: "Malai Chicken", category: "raw materials", unit: "kg", currentStock: 1, minLevel: 10, costPerUnit: 1400, supplier: "", location: "" },
+                { id: 363, name: "Chicken", category: "raw materials", unit: "kg", currentStock: 0, minLevel: 10, costPerUnit: 0, supplier: "", location: "" },
+                { id: 364, name: "Cream", category: "raw materials", unit: "kg", currentStock: 1, minLevel: 10, costPerUnit: 220, supplier: "", location: "" },
+                { id: 369, name: "Oil", category: "raw materials", unit: "kg", currentStock: 1, minLevel: 10, costPerUnit: 510, supplier: "", location: "" },
+                { id: 434, name: "Milk (Liquid)", category: "raw materials", unit: "kg", currentStock: 1, minLevel: 0, costPerUnit: 450, supplier: "", location: "" }
+            ];
+            
+            const sampleRecipes = [
+        {
                 id: 101,
         name: "Fries Medium",
         category: "starter",
@@ -2178,10 +2346,20 @@
     // ────────────────────────────────────────────────
     // END — this covers every product with any quantity or ingredient detail in the provided files
 ];
-
-        // Initialize with sample data
-        inventoryData.ingredients = [...sampleIngredients];
-        inventoryData.recipes = [...sampleRecipes];
+inventoryData.ingredients = sampleIngredients;
+    inventoryData.recipes = sampleRecipes;
+    
+    saveDataToStorage();
+    console.log('Sample data loaded');
+} else {
+    // USER HAS DATA - USE IT!
+    inventoryData = storedData;
+    console.log('Loading user data:', 
+        inventoryData.ingredients?.length || 0, 'ingredients,', 
+        inventoryData.recipes?.length || 0, 'recipes,',
+        inventoryData.grnHistory?.length || 0, 'GRNs'
+    );
+}
 
         // ==========================================
         // UTILITY FUNCTIONS
@@ -2207,7 +2385,12 @@
                 packaging: 'Packaging',
                 beverages: 'Beverages',
                 frozen: 'Frozen Items',
-                dry: 'Dry Goods'
+                dry: 'Dry Goods',
+                sauce: 'Sauce',
+                chicken: 'Chicken',
+                cheese: 'Cheese',
+                oil: 'Oil',
+                flour: 'Flour'
             };
             return labels[cat] || cat;
         }
@@ -2222,22 +2405,20 @@
         // TAB NAVIGATION
         // ==========================================
         function switchTab(tabId) {
-            // Update tab buttons
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-            event.target.closest('.tab-btn').classList.add('active');
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    event.target.closest('.tab-btn').classList.add('active');
 
-            // Update tab content
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-            document.getElementById(tabId).classList.add('active');
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    document.getElementById(tabId).classList.add('active');
 
-            // Refresh data
-            if (tabId === 'dashboard') refreshDashboard();
-            if (tabId === 'ingredients') renderIngredients();
-            if (tabId === 'recipes') renderRecipes();
-            if (tabId === 'grn') renderGRN();
-            if (tabId === 'consumption') renderConsumption();
-            if (tabId === 'closing') loadClosingData();
-        }
+    if (tabId === 'dashboard') refreshDashboard();
+    if (tabId === 'ingredients') renderIngredients();
+    if (tabId === 'recipes') renderRecipes();  // <-- ADD THIS LINE
+    if (tabId === 'grn') renderGRN();
+    if (tabId === 'consumption') renderConsumption();
+    if (tabId === 'closing') loadClosingData();
+}
+
 
         function switchConsumptionTab(tab) {
             document.querySelectorAll('.tab-secondary').forEach(t => t.classList.remove('active'));
@@ -2254,46 +2435,41 @@
         }
 
         // ==========================================
-// MODAL FUNCTIONS (clean version: edit works, close works, no unwanted reset on open)
-// ==========================================
+        // MODAL FUNCTIONS
+        // ==========================================
+        function openModal(modalId) {
+            const modal = document.getElementById(modalId);
+            if (!modal) return;
 
-function openModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (!modal) return;
+            modal.classList.add('active');
 
-    modal.classList.add('active');
-
-    // Special init only — NO reset here
-    if (modalId === 'grn-modal') {
+            if (modalId === 'grn-modal') {
                 resetGRNForm();
             }
-    if (modalId === 'add-recipe-modal') {
-        populateRecipeIngredientSelects();  // Just fill selects — don't reset form
-    }
-    if (modalId === 'closing-modal') {
-        document.querySelector('#closing-form input[name="date"]').valueAsDate = new Date();
-        generateClosingTable();
-    }
-}
+            if (modalId === 'add-recipe-modal') {
+                populateRecipeIngredientSelects();
+            }
+            if (modalId === 'closing-modal') {
+                document.querySelector('#closing-form input[name="date"]').valueAsDate = new Date();
+                generateClosingTable();
+            }
+        }
 
-function closeModal(modalId) {
-    const modal = document.getElementById(modalId);
-    if (!modal) return;
+        function closeModal(modalId) {
+            const modal = document.getElementById(modalId);
+            if (!modal) return;
+            
+            modal.classList.remove('active');
+            
+            if (modalId === 'add-recipe-modal') {
+                resetRecipeForm();
+            }
+        }
 
-    // Optional: clean up form AFTER closing (only if you want form reset on cancel/close)
-    // If you DON'T want reset on cancel, comment out the next if block
-    if (modalId === 'add-recipe-modal') {
-        resetRecipeForm();  // This runs AFTER modal is hidden — safe for next open
-    }
-
-    modal.classList.remove('active');
-}
-
-                // ==========================================
+        // ==========================================
         // DASHBOARD FUNCTIONS
         // ==========================================
         function refreshDashboard() {
-            // Calculate stats
             const totalIngredients = inventoryData.ingredients.length;
             const lowStock = inventoryData.ingredients.filter(i => i.currentStock > 0 && i.currentStock <= i.minLevel).length;
             const stockOut = inventoryData.ingredients.filter(i => i.currentStock <= 0).length;
@@ -2304,14 +2480,12 @@ function closeModal(modalId) {
 
             const totalValue = inventoryData.ingredients.reduce((sum, i) => sum + (i.currentStock * i.costPerUnit), 0);
 
-            // Update DOM
             document.getElementById('total-ingredients').textContent = totalIngredients;
             document.getElementById('low-stock-count').textContent = lowStock;
             document.getElementById('stock-out-count').textContent = stockOut;
             document.getElementById('today-consumption').textContent = todayConsumption;
             document.getElementById('inventory-value').textContent = formatCurrency(totalValue);
 
-            // Calculate variance
             const todayClosing = inventoryData.closingHistory.find(c => {
                 return new Date(c.date).toDateString() === new Date().toDateString();
             });
@@ -2325,10 +2499,7 @@ function closeModal(modalId) {
                 document.getElementById('today-variance').textContent = 'N/A';
             }
 
-            // Render alerts
             renderAlerts();
-
-            // Render chart
             renderConsumptionChart();
         }
 
@@ -2368,7 +2539,6 @@ function closeModal(modalId) {
             const ctx = document.getElementById('consumptionChart');
             if (!ctx) return;
 
-            // Get last 7 days data
             const days = [];
             const data = [];
             for (let i = 6; i >= 0; i--) {
@@ -2482,6 +2652,7 @@ function closeModal(modalId) {
             const ing = inventoryData.ingredients.find(i => i.id === id);
             if (ing) {
                 ing.currentStock = Math.max(0, ing.currentStock + change);
+                saveDataToStorage(); // Save after stock change
                 renderIngredients();
                 refreshDashboard();
             }
@@ -2503,6 +2674,7 @@ function closeModal(modalId) {
             };
 
             inventoryData.ingredients.push(newIngredient);
+            saveDataToStorage(); // Save after adding
             closeModal('add-ingredient-modal');
             form.reset();
             renderIngredients();
@@ -2514,7 +2686,6 @@ function closeModal(modalId) {
             const ing = inventoryData.ingredients.find(i => i.id === id);
             if (!ing) return;
 
-            // Populate form and open modal
             const form = document.getElementById('ingredient-form');
             form.name.value = ing.name;
             form.category.value = ing.category;
@@ -2525,7 +2696,6 @@ function closeModal(modalId) {
             form.supplier.value = ing.supplier || '';
             form.location.value = ing.location || '';
 
-            // Change save behavior to update
             form.onsubmit = function(e) {
                 e.preventDefault();
                 ing.name = form.name.value;
@@ -2537,6 +2707,7 @@ function closeModal(modalId) {
                 ing.supplier = form.supplier.value;
                 ing.location = form.location.value;
 
+                saveDataToStorage(); // Save after edit
                 closeModal('add-ingredient-modal');
                 form.reset();
                 form.onsubmit = saveIngredient;
@@ -2551,496 +2722,24 @@ function closeModal(modalId) {
         function deleteIngredient(id) {
             if (!confirm('Are you sure you want to delete this ingredient?')) return;
             inventoryData.ingredients = inventoryData.ingredients.filter(i => i.id !== id);
+            saveDataToStorage(); // Save after delete
             renderIngredients();
             refreshDashboard();
         }
 
         // ==========================================
-        // RECIPE FUNCTIONS
+        // GRN FUNCTIONS - FIXED FOR MULTIPLE ITEMS
         // ==========================================
-        function renderRecipes() {
-            const container = document.getElementById('recipes-container');
-            const search = document.getElementById('recipe-search')?.value.toLowerCase() || '';
-
-            let filtered = inventoryData.recipes;
-            if (search) {
-                filtered = filtered.filter(r => r.name.toLowerCase().includes(search));
-            }
-
-            container.innerHTML = filtered.map(recipe => {
-                const ingredientCount = recipe.ingredients.length;
-                const totalCost = recipe.ingredients.reduce((sum, ing) => {
-                    const ingredient = inventoryData.ingredients.find(i => i.id === ing.ingredientId);
-                    return sum + (ingredient ? ing.qty * ingredient.costPerUnit : 0);
-                }, 0);
-                const profit = recipe.sellingPrice - totalCost;
-                const margin = recipe.sellingPrice > 0 ? ((profit / recipe.sellingPrice) * 100).toFixed(1) : 0;
-
-                return `
-                    <div style="background: white; border: 2px solid #e5e7eb; border-radius: 15px; padding: 20px; margin-bottom: 15px;">
-                        <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
-                            <div>
-                                <h3 style="margin: 0 0 5px 0; color: var(--dark);">${recipe.name}</h3>
-                                <span class="badge badge-info">${recipe.category.toUpperCase()}</span>
-                                <span style="margin-left: 10px; color: var(--gray); font-size: 13px;">${ingredientCount} ingredients</span>
-                            </div>
-                            <div style="text-align: right;">
-                                <div style="font-size: 20px; font-weight: 900; color: var(--success);">${formatCurrency(recipe.sellingPrice)}</div>
-                                <div style="font-size: 12px; color: var(--gray);">Selling Price</div>
-                            </div>
-                        </div>
-
-                        <div style="background: #f8fafc; padding: 15px; border-radius: 10px; margin-bottom: 15px;">
-                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; text-align: center;">
-                                <div>
-                                    <div style="font-size: 18px; font-weight: 900; color: var(--danger);">${formatCurrency(totalCost)}</div>
-                                    <div style="font-size: 11px; color: var(--gray); text-transform: uppercase;">Food Cost</div>
-                                </div>
-                                <div>
-                                    <div style="font-size: 18px; font-weight: 900; color: var(--info);">${formatCurrency(profit)}</div>
-                                    <div style="font-size: 11px; color: var(--gray); text-transform: uppercase;">Profit</div>
-                                </div>
-                                <div>
-                                    <div style="font-size: 18px; font-weight: 900; color: ${margin > 60 ? 'var(--success)' : margin > 40 ? 'var(--warning)' : 'var(--danger)'};">${margin}%</div>
-                                    <div style="font-size: 11px; color: var(--gray); text-transform: uppercase;">Margin</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div style="margin-bottom: 15px;">
-                            <div style="font-weight: 700; font-size: 12px; color: var(--gray); margin-bottom: 8px; text-transform: uppercase;">Ingredients:</div>
-                            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                                ${recipe.ingredients.map(ing => {
-                                    const ingredient = inventoryData.ingredients.find(i => i.id === ing.ingredientId);
-                                    return ingredient ? `
-                                        <span style="background: #f3f4f6; padding: 5px 12px; border-radius: 20px; font-size: 12px;">
-                                            ${ingredient.name} (${ing.qty} ${ing.unit})
-                                        </span>
-                                    ` : '';
-                                }).join('')}
-                            </div>
-                        </div>
-
-                        <div style="display: flex; gap: 10px;">
-                            <button class="btn btn-primary" style="flex: 1;" onclick="simulateRecipeSale(${recipe.id})">
-                                <i class="fas fa-play"></i> Simulate Sale
-                            </button>
-                            <button class="action-btn edit" onclick="editRecipe(${recipe.id})">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <button class="action-btn delete" onclick="deleteRecipe(${recipe.id})">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        function filterRecipes() {
-            renderRecipes();
-        }
-
-        function populateRecipeIngredientSelects() {
-            const selects = document.querySelectorAll('.ingredient-select');
-            const options = inventoryData.ingredients.map(ing => 
-                `<option value="${ing.id}">${ing.name} (${ing.unit})</option>`
-            ).join('');
-
-            selects.forEach(select => {
-                select.innerHTML = '<option value="">Select Ingredient</option>' + options;
-            });
-        }
-
-        function addIngredientRow() {
-            const container = document.getElementById('recipe-ingredients-container');
-            const row = document.createElement('div');
-            row.className = 'ingredient-row';
-            row.innerHTML = `
-                <select class="form-select ingredient-select" required>
-                    <option value="">Select Ingredient</option>
-                    ${inventoryData.ingredients.map(ing => `<option value="${ing.id}">${ing.name} (${ing.unit})</option>`).join('')}
-                </select>
-                <input type="number" class="form-input" placeholder="Qty" step="0.01" required>
-                <select class="form-select" style="width: 100px;">
-                    <option value="kg">kg</option>
-                    <option value="g">g</option>
-                    <option value="l">L</option>
-                    <option value="ml">ml</option>
-                    <option value="pcs">pcs</option>
-                </select>
-                <button type="button" class="remove-ingredient" onclick="removeIngredientRow(this)">
-                    <i class="fas fa-trash"></i>
-                </button>
-            `;
-            container.appendChild(row);
-        }
-
-        function removeIngredientRow(btn) {
-            btn.closest('.ingredient-row').remove();
-        }
-
-        function saveRecipe(e) {
-            e.preventDefault();
-            const form = e.target;
-            const rows = document.querySelectorAll('#recipe-ingredients-container .ingredient-row');
-
-            const ingredients = [];
-            rows.forEach(row => {
-                const selects = row.querySelectorAll('select');
-                const inputs = row.querySelectorAll('input');
-                if (selects[0].value && inputs[0].value) {
-                    ingredients.push({
-                        ingredientId: parseInt(selects[0].value),
-                        qty: parseFloat(inputs[0].value),
-                        unit: selects[1].value
-                    });
-                }
-            });
-
-            const newRecipe = {
-                id: generateId(),
-                name: form.name.value,
-                category: form.category.value,
-                sellingPrice: parseFloat(form.sellingPrice.value) || 0,
-                ingredients: ingredients
-            };
-
-            inventoryData.recipes.push(newRecipe);
-    closeModal('add-recipe-modal');
-    resetRecipeForm(); // Use the new reset function
-    renderRecipes();
-    alert('Recipe saved successfully!');
-            document.getElementById('recipe-ingredients-container').innerHTML = `
-                <div class="ingredient-row">
-                    <select class="form-select ingredient-select" required>
-                        <option value="">Select Ingredient</option>
-                    </select>
-                    <input type="number" class="form-input" placeholder="Qty" step="0.01" required>
-                    <select class="form-select" style="width: 100px;">
-                        <option value="kg">kg</option>
-                        <option value="g">g</option>
-                        <option value="l">L</option>
-                        <option value="ml">ml</option>
-                        <option value="pcs">pcs</option>
-                    </select>
-                    <button type="button" class="remove-ingredient" onclick="removeIngredientRow(this)">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
-            `;
-            renderRecipes();
-            alert('Recipe saved successfully!');
-        }
-
-        function editRecipe(id) {
-    const recipe = inventoryData.recipes.find(r => r.id === id);
-    if (!recipe) return;
-
-    // Populate form fields
-    const form = document.getElementById('recipe-form');
-    form.name.value = recipe.name;
-    form.category.value = recipe.category;
-    form.sellingPrice.value = recipe.sellingPrice;
-
-    // Clear and rebuild ingredient rows
-    const container = document.getElementById('recipe-ingredients-container');
-    container.innerHTML = '';
-
-    recipe.ingredients.forEach((ing, index) => {
-        const ingredient = inventoryData.ingredients.find(i => i.id === ing.ingredientId);
-        const row = document.createElement('div');
-        row.className = 'ingredient-row';
-        row.innerHTML = `
-            <select class="form-select ingredient-select" required>
-                <option value="">Select Ingredient</option>
-                ${inventoryData.ingredients.map(i => 
-                    `<option value="${i.id}" ${i.id === ing.ingredientId ? 'selected' : ''}>${i.name} (${i.unit})</option>`
-                ).join('')}
-            </select>
-            <input type="number" class="form-input" placeholder="Qty" step="0.01" required value="${ing.qty}">
-            <select class="form-select" style="width: 100px;">
-                <option value="kg" ${ing.unit === 'kg' ? 'selected' : ''}>kg</option>
-                <option value="g" ${ing.unit === 'g' ? 'selected' : ''}>g</option>
-                <option value="l" ${ing.unit === 'l' ? 'selected' : ''}>L</option>
-                <option value="ml" ${ing.unit === 'ml' ? 'selected' : ''}>ml</option>
-                <option value="pcs" ${ing.unit === 'pcs' ? 'selected' : ''}>pcs</option>
-            </select>
-            <button type="button" class="remove-ingredient" onclick="removeIngredientRow(this)">
-                <i class="fas fa-trash"></i>
-            </button>
-        `;
-        container.appendChild(row);
-    });
-
-    // Change modal title
-    document.querySelector('#add-recipe-modal .modal-title').innerHTML = '<i class="fas fa-edit"></i> Edit Recipe';
-
-    // Change submit behavior to update instead of create
-    form.onsubmit = function(e) {
-        e.preventDefault();
-        
-        const rows = document.querySelectorAll('#recipe-ingredients-container .ingredient-row');
-        const ingredients = [];
-        
-        rows.forEach(row => {
-            const selects = row.querySelectorAll('select');
-            const inputs = row.querySelectorAll('input');
-            if (selects[0].value && inputs[0].value) {
-                ingredients.push({
-                    ingredientId: parseInt(selects[0].value),
-                    qty: parseFloat(inputs[0].value),
-                    unit: selects[1].value
-                });
-            }
-        });
-
-        // Update recipe
-        recipe.name = form.name.value;
-        recipe.category = form.category.value;
-        recipe.sellingPrice = parseFloat(form.sellingPrice.value) || 0;
-        recipe.ingredients = ingredients;
-
-        // Reset form and close modal
-        closeModal('add-recipe-modal');
-        resetRecipeForm();
-        
-        renderRecipes();
-        alert('Recipe updated successfully!');
-    };
-
-    openModal('add-recipe-modal');
-}
-function resetRecipeForm() {
-    const form = document.getElementById('recipe-form');
-    form.reset();
-    form.onsubmit = saveRecipe; // Restore original submit handler
-    
-    // Reset title
-    document.querySelector('#add-recipe-modal .modal-title').innerHTML = '<i class="fas fa-utensils"></i> Add New Recipe';
-    
-    // Reset to single empty ingredient row
-    document.getElementById('recipe-ingredients-container').innerHTML = `
-        <div class="ingredient-row">
-            <select class="form-select ingredient-select" required>
-                <option value="">Select Ingredient</option>
-            </select>
-            <input type="number" class="form-input" placeholder="Qty" step="0.01" required>
-            <select class="form-select" style="width: 100px;">
-                <option value="kg">kg</option>
-                <option value="g">g</option>
-                <option value="l">L</option>
-                <option value="ml">ml</option>
-                <option value="pcs">pcs</option>
-            </select>
-            <button type="button" class="remove-ingredient" onclick="removeIngredientRow(this)">
-                <i class="fas fa-trash"></i>
-            </button>
-        </div>
-    `;
-    
-    populateRecipeIngredientSelects();
-}
-
-        function deleteRecipe(id) {
-            if (!confirm('Are you sure you want to delete this recipe?')) return;
-            inventoryData.recipes = inventoryData.recipes.filter(r => r.id !== id);
-            renderRecipes();
-        }
-
-        // ==========================================
-        // CONSUMPTION & SALES SIMULATION
-        // ==========================================
-        function simulateRecipeSale(recipeId) {
-            const recipe = inventoryData.recipes.find(r => r.id === recipeId);
-            if (!recipe) return;
-
-            // Check stock availability
-            const insufficient = [];
-            recipe.ingredients.forEach(ing => {
-                const ingredient = inventoryData.ingredients.find(i => i.id === ing.ingredientId);
-                if (ingredient && ingredient.currentStock < ing.qty) {
-                    insufficient.push(ingredient.name);
-                }
-            });
-
-            if (insufficient.length > 0) {
-                alert('Cannot complete sale. Insufficient stock for: ' + insufficient.join(', '));
-                return;
-            }
-
-            // Deduct stock
-            recipe.ingredients.forEach(ing => {
-                const ingredient = inventoryData.ingredients.find(i => i.id === ing.ingredientId);
-                if (ingredient) {
-                    ingredient.currentStock -= ing.qty;
-                }
-            });
-
-            // Log consumption
-            const logEntry = {
-                id: generateId(),
-                timestamp: new Date().toISOString(),
-                recipeId: recipe.id,
-                recipeName: recipe.name,
-                type: 'sale',
-                ingredients: recipe.ingredients.map(ing => {
-                    const ingredient = inventoryData.ingredients.find(i => i.id === ing.ingredientId);
-                    return {
-                        ingredientId: ing.ingredientId,
-                        name: ingredient ? ingredient.name : 'Unknown',
-                        qty: ing.qty,
-                        unit: ing.unit,
-                        cost: ingredient ? ing.qty * ingredient.costPerUnit : 0
-                    };
-                })
-            };
-
-            inventoryData.consumptionLog.unshift(logEntry);
-
-            renderIngredients();
-            renderConsumption();
-            refreshDashboard();
-
-            alert(`Sale completed! ${recipe.name} sold. Stock deducted.`);
-        }
-
-        function simulateSale() {
-            // Randomly select a recipe to simulate
-            if (inventoryData.recipes.length === 0) {
-                alert('No recipes available. Add recipes first.');
-                return;
-            }
-            const randomRecipe = inventoryData.recipes[Math.floor(Math.random() * inventoryData.recipes.length)];
-            simulateRecipeSale(randomRecipe.id);
-        }
-
-        function renderConsumption() {
-            renderConsumptionLive();
-            renderConsumptionByItem();
-            renderConsumptionByRecipe();
-        }
-
-        function renderConsumptionLive() {
-            const container = document.getElementById('consumption-feed');
-
-            if (inventoryData.consumptionLog.length === 0) {
-                container.innerHTML = `
-                    <div style="text-align: center; padding: 40px; color: var(--gray);">
-                        <i class="fas fa-utensils" style="font-size: 48px; margin-bottom: 15px;"></i>
-                        <h3>No Consumption Yet</h3>
-                        <p>Sales will appear here automatically when orders are processed.</p>
-                    </div>
-                `;
-                return;
-            }
-
-            container.innerHTML = inventoryData.consumptionLog.slice(0, 20).map(log => `
-                <div class="consumption-log">
-                    <div class="consumption-header">
-                        <div>
-                            <span style="font-weight: 900; color: var(--dark);">${log.recipeName}</span>
-                            <span class="badge ${log.type === 'sale' ? 'badge-success' : 'badge-warning'}" style="margin-left: 10px;">${log.type.toUpperCase()}</span>
-                        </div>
-                        <span style="color: var(--gray); font-size: 13px;">${new Date(log.timestamp).toLocaleString()}</span>
-                    </div>
-                    <div class="consumption-items">
-                        ${log.ingredients.map(ing => `
-                            <div class="consumption-item">
-                                <span>${ing.name}</span>
-                                <span style="font-weight: 700;">-${ing.qty} ${ing.unit}
-                                (${formatCurrency(ing.cost)})</span>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            `).join('');
-        }
-        function renderConsumptionByItem() {
-            const tbody = document.getElementById('consumption-by-item-body');
-
-            // Aggregate consumption by ingredient
-            const consumption = {};
-            inventoryData.consumptionLog.forEach(log => {
-                log.ingredients.forEach(ing => {
-                    if (!consumption[ing.ingredientId]) {
-                        consumption[ing.ingredientId] = {
-                            name: ing.name,
-                            totalQty: 0,
-                            totalCost: 0,
-                            unit: ing.unit,
-                            lastUsed: log.timestamp
-                        };
-                    }
-                    consumption[ing.ingredientId].totalQty += ing.qty;
-                    consumption[ing.ingredientId].totalCost += ing.cost;
-                    if (new Date(log.timestamp) > new Date(consumption[ing.ingredientId].lastUsed)) {
-                        consumption[ing.ingredientId].lastUsed = log.timestamp;
-                    }
-                });
-            });
-
-            const sorted = Object.values(consumption).sort((a, b) => b.totalCost - a.totalCost);
-
-            tbody.innerHTML = sorted.map(item => `
-                <tr>
-                    <td style="font-weight: 700;">${item.name}</td>
-                    <td>${item.totalQty.toFixed(2)}</td>
-                    <td><span class="unit-badge">${item.unit}</span></td>
-                    <td class="cost-display">${formatCurrency(item.totalCost)}</td>
-                    <td style="font-size: 13px; color: var(--gray);">${new Date(item.lastUsed).toLocaleString()}</td>
-                </tr>
-            `).join('');
-        }
-
-        function renderConsumptionByRecipe() {
-            const tbody = document.getElementById('consumption-by-recipe-body');
-
-            // Aggregate by recipe
-            const recipeStats = {};
-            inventoryData.consumptionLog.forEach(log => {
-                if (!recipeStats[log.recipeId]) {
-                    recipeStats[log.recipeId] = {
-                        name: log.recipeName,
-                        count: 0,
-                        totalIngredients: 0,
-                        totalCost: 0
-                    };
-                }
-                recipeStats[log.recipeId].count++;
-                recipeStats[log.recipeId].totalIngredients += log.ingredients.length;
-                recipeStats[log.recipeId].totalCost += log.ingredients.reduce((sum, ing) => sum + ing.cost, 0);
-            });
-
-            const sorted = Object.values(recipeStats).sort((a, b) => b.count - a.count);
-
-            tbody.innerHTML = sorted.map(item => `
-                <tr>
-                    <td style="font-weight: 700;">${item.name}</td>
-                    <td><span class="badge badge-success">${item.count} sales</span></td>
-                    <td>${item.totalIngredients} items</td>
-                    <td class="cost-display">${formatCurrency(item.totalCost)}</td>
-                </tr>
-            `).join('');
-        }
-
-                // ==========================================
-        // FIXED GRN FUNCTIONS - Multiple Items Support
-        // ==========================================
-        
         function resetGRNForm() {
             const form = document.getElementById('grn-form');
             if (form) form.reset();
             
-            // Generate new GRN number
             const grnNum = 'GRN-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(Math.random()*1000);
             document.getElementById('auto-grn-number').value = grnNum;
             
-            // Set today's date
             const dateInput = document.querySelector('#grn-modal input[name="date"]');
             if (dateInput) dateInput.valueAsDate = new Date();
             
-            // Reset items container with one empty row
             const container = document.getElementById('grn-items-container');
             if (container) {
                 container.innerHTML = createGRNRowHTML(true);
@@ -3055,7 +2754,7 @@ function resetRecipeForm() {
             ).join('');
             
             return `
-                <div class="grn-item-row" style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: center; background: white; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb; transition: all 0.2s;">
+                <div class="grn-item-row" style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: center; background: white; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb;">
                     <select class="form-select grn-item-select" required onchange="updateGRNRowTotal(this)" style="width: 100%;">
                         <option value="">Select Ingredient</option>
                         ${options}
@@ -3076,8 +2775,6 @@ function resetRecipeForm() {
             div.innerHTML = createGRNRowHTML(false);
             container.appendChild(div.firstElementChild);
             updateGRNTotals();
-            
-            // Scroll to bottom
             container.scrollTop = container.scrollHeight;
         }
 
@@ -3087,7 +2784,6 @@ function resetRecipeForm() {
                 alert('You must have at least one item in the GRN.');
                 return;
             }
-            
             btn.closest('.grn-item-row').remove();
             updateGRNTotals();
         }
@@ -3100,7 +2796,6 @@ function resetRecipeForm() {
             const total = qty * cost;
             
             row.querySelector('.row-total').textContent = 'Rs ' + total.toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            
             updateGRNTotals();
         }
 
@@ -3124,11 +2819,10 @@ function resetRecipeForm() {
             e.preventDefault();
             const form = e.target;
             
-            // Collect all items
             const items = [];
             let hasError = false;
             
-            document.querySelectorAll('.grn-item-row').forEach((row, index) => {
+            document.querySelectorAll('.grn-item-row').forEach((row) => {
                 const select = row.querySelector('select');
                 const inputs = row.querySelectorAll('input');
                 
@@ -3154,8 +2848,6 @@ function resetRecipeForm() {
                         unitCost: unitCost,
                         total: qty * unitCost
                     });
-                    
-                    // Update stock immediately
                     ingredient.currentStock += qty;
                 }
             });
@@ -3183,13 +2875,14 @@ function resetRecipeForm() {
             };
             
             inventoryData.grnHistory.unshift(grn);
+            saveDataToStorage(); // Save to local storage
             
             closeModal('grn-modal');
             renderIngredients();
             renderGRN();
             refreshDashboard();
             
-            alert(`GRN saved successfully!\n\nGRN #: ${grn.grnNumber}\nItems: ${items.length}\nTotal: Rs ${grn.total.toLocaleString('en-PK', {minimumFractionDigits: 2})}`);
+            alert(`GRN saved successfully!\\n\\nGRN #: ${grn.grnNumber}\\nItems: ${items.length}\\nTotal: Rs ${grn.total.toLocaleString('en-PK', {minimumFractionDigits: 2})}`);
         }
 
         function renderGRN() {
@@ -3199,41 +2892,36 @@ function resetRecipeForm() {
             
             let filtered = inventoryData.grnHistory;
             
-            if (dateFilter) {
-                filtered = filtered.filter(g => g.date === dateFilter);
-            }
-            if (supplierFilter) {
-                filtered = filtered.filter(g => g.supplier.toLowerCase().includes(supplierFilter));
-            }
+            if (dateFilter) filtered = filtered.filter(g => g.date === dateFilter);
+            if (supplierFilter) filtered = filtered.filter(g => g.supplier.toLowerCase().includes(supplierFilter));
 
             if (filtered.length === 0) {
                 container.innerHTML = `
                     <div style="text-align: center; padding: 60px 40px; color: var(--gray); background: white; border-radius: 20px; border: 2px dashed #e5e7eb;">
                         <i class="fas fa-truck" style="font-size: 64px; margin-bottom: 20px; color: #e5e7eb;"></i>
                         <h3 style="margin-bottom: 10px;">No GRN Records Found</h3>
-                        <p>Create a new GRN when you receive stock from suppliers.<br>All items from the same day will be grouped together.</p>
+                        <p>Create a new GRN when you receive stock from suppliers.</p>
                     </div>
                 `;
                 return;
             }
 
             container.innerHTML = filtered.map(grn => `
-                <div class="grn-card" style="background: linear-gradient(135deg, #ecfdf5 0%, #ffffff 100%); border: 2px solid #34d399; border-radius: 20px; padding: 25px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                    <div class="grn-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 2px solid #bbf7d0;">
+                <div style="background: linear-gradient(135deg, #ecfdf5 0%, #ffffff 100%); border: 2px solid #34d399; border-radius: 20px; padding: 25px; margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 2px solid #bbf7d0;">
                         <div>
                             <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 8px;">
                                 <span style="font-size: 22px; font-weight: 900; color: #059669; font-family: monospace;">${grn.grnNumber}</span>
                                 <span style="background: #34d399; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 700;">${grn.items.length} ITEMS</span>
                             </div>
-                            <div style="font-size: 14px; color: var(--gray); display: flex; align-items: center; gap: 20px; flex-wrap: wrap;">
-                                <span><i class="fas fa-calendar-alt" style="color: var(--primary); margin-right: 5px;"></i> ${formatDate(grn.date)}</span>
-                                <span><i class="fas fa-building" style="color: var(--primary); margin-right: 5px;"></i> ${grn.supplier}</span>
-                                ${grn.invoiceNumber ? `<span><i class="fas fa-file-invoice" style="color: var(--primary); margin-right: 5px;"></i> Inv: ${grn.invoiceNumber}</span>` : ''}
+                            <div style="font-size: 14px; color: var(--gray);">
+                                <i class="fas fa-calendar-alt" style="color: var(--primary);"></i> ${formatDate(grn.date)} | 
+                                <i class="fas fa-building" style="color: var(--primary);"></i> ${grn.supplier}
+                                ${grn.invoiceNumber ? ` | <i class="fas fa-file-invoice" style="color: var(--primary);"></i> ${grn.invoiceNumber}` : ''}
                             </div>
                         </div>
                         <div style="text-align: right;">
                             <div style="font-size: 32px; font-weight: 900; color: #059669;">${formatCurrency(grn.total)}</div>
-                            <div style="font-size: 12px; color: var(--gray); text-transform: uppercase; letter-spacing: 1px;">Total Value</div>
                         </div>
                     </div>
                     
@@ -3241,32 +2929,28 @@ function resetRecipeForm() {
                         <table style="width: 100%; border-collapse: collapse;">
                             <thead>
                                 <tr style="background: #f8fafc;">
-                                    <th style="padding: 12px 15px; text-align: left; font-size: 11px; text-transform: uppercase; color: var(--gray); font-weight: 800;">Item</th>
-                                    <th style="padding: 12px 15px; text-align: center; font-size: 11px; text-transform: uppercase; color: var(--gray); font-weight: 800;">Qty</th>
-                                    <th style="padding: 12px 15px; text-align: right; font-size: 11px; text-transform: uppercase; color: var(--gray); font-weight: 800;">Unit Cost</th>
-                                    <th style="padding: 12px 15px; text-align: right; font-size: 11px; text-transform: uppercase; color: var(--gray); font-weight: 800;">Total</th>
+                                    <th style="padding: 12px; text-align: left; font-size: 11px; text-transform: uppercase;">Item</th>
+                                    <th style="padding: 12px; text-align: center; font-size: 11px; text-transform: uppercase;">Qty</th>
+                                    <th style="padding: 12px; text-align: right; font-size: 11px; text-transform: uppercase;">Unit Cost</th>
+                                    <th style="padding: 12px; text-align: right; font-size: 11px; text-transform: uppercase;">Total</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 ${grn.items.map((item, idx) => `
-                                    <tr style="border-top: 1px solid #f3f4f6; ${idx % 2 === 0 ? 'background: #fafafa;' : ''}">
-                                        <td style="padding: 12px 15px; font-weight: 600; color: var(--dark);">${item.name}</td>
-                                        <td style="padding: 12px 15px; text-align: center;">
+                                    <tr style="border-top: 1px solid #f3f4f6;">
+                                        <td style="padding: 12px; font-weight: 600;">${item.name}</td>
+                                        <td style="padding: 12px; text-align: center;">
                                             <span style="background: #f3f4f6; padding: 4px 12px; border-radius: 20px; font-weight: 700;">${item.qty} ${item.unit}</span>
                                         </td>
-                                        <td style="padding: 12px 15px; text-align: right; color: var(--gray);">${formatCurrency(item.unitCost)}</td>
-                                        <td style="padding: 12px 15px; text-align: right; font-weight: 700; color: var(--dark);">${formatCurrency(item.total)}</td>
+                                        <td style="padding: 12px; text-align: right;">${formatCurrency(item.unitCost)}</td>
+                                        <td style="padding: 12px; text-align: right; font-weight: 700;">${formatCurrency(item.total)}</td>
                                     </tr>
                                 `).join('')}
                             </tbody>
                         </table>
                     </div>
                     
-                    ${grn.notes ? `
-                        <div style="margin-top: 15px; padding: 15px; background: #fef3c7; border-radius: 10px; border-left: 4px solid var(--warning); font-size: 13px; color: #92400e;">
-                            <i class="fas fa-sticky-note" style="margin-right: 8px;"></i> ${grn.notes}
-                        </div>
-                    ` : ''}
+                    ${grn.notes ? `<div style="margin-top: 15px; padding: 15px; background: #fef3c7; border-radius: 10px; font-size: 13px;"><i class="fas fa-sticky-note"></i> ${grn.notes}</div>` : ''}
                     
                     <div style="margin-top: 15px; display: flex; justify-content: flex-end; gap: 10px;">
                         <button class="btn btn-secondary" onclick="printGRN('${grn.id}')" style="padding: 8px 16px; font-size: 12px;">
@@ -3281,11 +2965,9 @@ function resetRecipeForm() {
         }
 
         function deleteGRN(id) {
-            if (!confirm('Are you sure you want to delete this GRN? This will revert the stock changes.')) return;
-            
+            if (!confirm('Delete this GRN? Stock will be reverted.')) return;
             const grn = inventoryData.grnHistory.find(g => g.id === id);
             if (grn) {
-                // Revert stock
                 grn.items.forEach(item => {
                     const ingredient = inventoryData.ingredients.find(i => i.id === item.ingredientId);
                     if (ingredient) {
@@ -3293,8 +2975,8 @@ function resetRecipeForm() {
                         if (ingredient.currentStock < 0) ingredient.currentStock = 0;
                     }
                 });
-                
                 inventoryData.grnHistory = inventoryData.grnHistory.filter(g => g.id !== id);
+                saveDataToStorage();
                 renderGRN();
                 renderIngredients();
                 refreshDashboard();
@@ -3304,82 +2986,413 @@ function resetRecipeForm() {
         function printGRN(id) {
             const grn = inventoryData.grnHistory.find(g => g.id === id);
             if (!grn) return;
-            
             const printWindow = window.open('', '_blank');
             printWindow.document.write(`
-                <html>
-                <head>
-                    <title>GRN ${grn.grnNumber}</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; padding: 40px; }
-                        .header { text-align: center; margin-bottom: 30px; }
-                        .grn-title { font-size: 24px; font-weight: bold; color: #059669; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-                        th { background: #f8fafc; }
-                        .total { text-align: right; font-size: 20px; font-weight: bold; margin-top: 20px; }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <div class="grn-title">GOODS RECEIPT NOTE</div>
-                        <div style="font-size: 18px; margin-top: 10px;">${grn.grnNumber}</div>
-                    </div>
-                    <div style="margin-bottom: 20px;">
-                        <strong>Date:</strong> ${formatDate(grn.date)}<br>
-                        <strong>Supplier:</strong> ${grn.supplier}<br>
-                        ${grn.invoiceNumber ? `<strong>Invoice #:</strong> ${grn.invoiceNumber}<br>` : ''}
-                    </div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>#</th>
-                                <th>Item</th>
-                                <th>Quantity</th>
-                                <th>Unit Cost</th>
-                                <th>Total</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${grn.items.map((item, idx) => `
-                                <tr>
-                                    <td>${idx + 1}</td>
-                                    <td>${item.name}</td>
-                                    <td>${item.qty} ${item.unit}</td>
-                                    <td>Rs ${item.unitCost.toFixed(2)}</td>
-                                    <td>Rs ${item.total.toFixed(2)}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                    <div class="total">
-                        Total: Rs ${grn.total.toFixed(2)}
-                    </div>
-                    ${grn.notes ? `<div style="margin-top: 20px; padding: 10px; background: #fef3c7;"><strong>Notes:</strong> ${grn.notes}</div>` : ''}
-                </body>
-                </html>
+                <html><head><title>GRN ${grn.grnNumber}</title>
+                <style>body{font-family:Arial;padding:40px}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #ddd;padding:12px}</style>
+                </head><body>
+                <h2>GOODS RECEIPT NOTE - ${grn.grnNumber}</h2>
+                <p>Date: ${formatDate(grn.date)}<br>Supplier: ${grn.supplier}</p>
+                <table><thead><tr><th>Item</th><th>Qty</th><th>Unit Cost</th><th>Total</th></tr></thead>
+                <tbody>${grn.items.map(i => `<tr><td>${i.name}</td><td>${i.qty} ${i.unit}</td><td>Rs ${i.unitCost.toFixed(2)}</td><td>Rs ${i.total.toFixed(2)}</td></tr>`).join('')}</tbody>
+                </table><h3 style="text-align:right">Total: Rs ${grn.total.toFixed(2)}</h3>
+                </body></html>
             `);
             printWindow.document.close();
             printWindow.print();
         }
 
         // ==========================================
-        // NIGHT CLOSING & VARIANCE
+// RECIPE FUNCTIONS - FIXED VERSION
+// ==========================================
+
+function renderRecipes() {
+    const container = document.getElementById('recipes-container');
+    const search = document.getElementById('recipe-search')?.value.toLowerCase() || '';
+
+    let filtered = inventoryData.recipes;
+    if (search) filtered = filtered.filter(r => r.name.toLowerCase().includes(search));
+
+    if (filtered.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 60px 40px; color: var(--gray); background: white; border-radius: 20px; border: 2px dashed #e5e7eb;">
+                <i class="fas fa-utensils" style="font-size: 64px; margin-bottom: 20px; color: #e5e7eb;"></i>
+                <h3 style="margin-bottom: 10px;">No Recipes Found</h3>
+                <p>Add your first recipe to get started.</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = filtered.map(recipe => {
+        // Handle both old format (name-based) and new format (ID-based)
+        const totalCost = recipe.ingredients.reduce((sum, ing) => {
+            let ingredient = null;
+            
+            if (ing.ingredientId) {
+                // New format with ID
+                ingredient = inventoryData.ingredients.find(i => i.id === ing.ingredientId);
+            } else if (ing.name) {
+                // Old sample format with name - try to find by name
+                ingredient = inventoryData.ingredients.find(i => 
+                    i.name.toLowerCase().trim() === ing.name.toLowerCase().trim()
+                );
+            }
+            
+            // If found, calculate cost, otherwise use 0
+            const costPerUnit = ingredient ? ingredient.costPerUnit : 0;
+            const qty = parseFloat(ing.qty) || 0;
+            return sum + (qty * costPerUnit);
+        }, 0);
+        
+        const profit = recipe.sellingPrice - totalCost;
+        const margin = recipe.sellingPrice > 0 ? ((profit / recipe.sellingPrice) * 100).toFixed(1) : 0;
+
+        return `
+            <div style="background: white; border: 2px solid #e5e7eb; border-radius: 15px; padding: 20px; margin-bottom: 15px;">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
+                    <div>
+                        <h3 style="margin: 0 0 5px 0;">${recipe.name}</h3>
+                        <span class="badge badge-info">${recipe.category.toUpperCase()}</span>
+                        <div style="margin-top: 8px; font-size: 12px; color: var(--gray);">
+                            Cost: ${formatCurrency(totalCost)} | Profit: ${formatCurrency(profit)} (${margin}%)
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 20px; font-weight: 900; color: var(--success);">${formatCurrency(recipe.sellingPrice)}</div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                    <button class="btn btn-primary" style="flex: 1;" onclick="simulateRecipeSale(${recipe.id})">
+                        <i class="fas fa-play"></i> Simulate Sale
+                    </button>
+                    <button class="action-btn edit" onclick="editRecipe(${recipe.id})" title="Edit Recipe">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="action-btn delete" onclick="deleteRecipe(${recipe.id})" title="Delete Recipe">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+function editRecipe(id) {
+    const recipe = inventoryData.recipes.find(r => r.id === id);
+    if (!recipe) return;
+
+    // Populate form
+    const form = document.getElementById('recipe-form');
+    document.getElementById('edit-recipe-id').value = recipe.id;
+    form.name.value = recipe.name;
+    form.category.value = recipe.category;
+    form.sellingPrice.value = recipe.sellingPrice;
+
+    // Update modal title
+    document.querySelector('#add-recipe-modal .modal-title').innerHTML = '<i class="fas fa-edit"></i> Edit Recipe';
+    
+    // Populate ingredients
+    const container = document.getElementById('recipe-ingredients-container');
+    container.innerHTML = '';
+    
+    recipe.ingredients.forEach(ing => {
+        let ingredientId = ing.ingredientId;
+        let ingredientUnit = ing.unit;
+        
+        if (!ingredientId && ing.name) {
+            const found = inventoryData.ingredients.find(i => 
+                i.name.toLowerCase().trim() === ing.name.toLowerCase().trim()
+            );
+            if (found) {
+                ingredientId = found.id;
+                ingredientUnit = found.unit;
+            }
+        }
+
+        const row = document.createElement('div');
+        row.className = 'ingredient-row';
+        row.innerHTML = `
+            <select class="form-select ingredient-select" required>
+                <option value="">Select Ingredient</option>
+                ${inventoryData.ingredients.map(i => 
+                    `<option value="${i.id}" ${i.id == ingredientId ? 'selected' : ''}>${i.name} (${i.unit})</option>`
+                ).join('')}
+            </select>
+            <input type="number" class="form-input" placeholder="Qty" step="0.01" value="${ing.qty}" required>
+            <select class="form-select" style="width: 100px;">
+                <option value="kg" ${ingredientUnit === 'kg' ? 'selected' : ''}>kg</option>
+                <option value="g" ${ingredientUnit === 'g' ? 'selected' : ''}>g</option>
+                <option value="l" ${ingredientUnit === 'l' ? 'selected' : ''}>L</option>
+                <option value="ml" ${ingredientUnit === 'ml' ? 'selected' : ''}>ml</option>
+                <option value="pcs" ${ingredientUnit === 'pcs' ? 'selected' : ''}>pcs</option>
+            </select>
+            <button type="button" class="remove-ingredient" onclick="removeIngredientRow(this)">
+                <i class="fas fa-trash"></i>
+            </button>
+        `;
+        container.appendChild(row);
+    });
+
+    // Change submit handler
+    form.onsubmit = function(e) {
+        e.preventDefault();
+        updateRecipe(e, recipe.id);
+    };
+
+    openModal('add-recipe-modal');
+}
+function updateRecipe(e, id) {
+    const form = e.target;
+    const rows = document.querySelectorAll('#recipe-ingredients-container .ingredient-row');
+    const ingredients = [];
+
+    rows.forEach(row => {
+        const selects = row.querySelectorAll('select');
+        const inputs = row.querySelectorAll('input');
+        if (selects[0].value && inputs[0].value) {
+            const ingredient = inventoryData.ingredients.find(i => i.id === parseInt(selects[0].value));
+            ingredients.push({
+                ingredientId: parseInt(selects[0].value),
+                name: ingredient ? ingredient.name : '',
+                qty: parseFloat(inputs[0].value),
+                unit: selects[1].value
+            });
+        }
+    });
+
+    const recipeIndex = inventoryData.recipes.findIndex(r => r.id === id);
+    if (recipeIndex !== -1) {
+        inventoryData.recipes[recipeIndex] = {
+            id: id,
+            name: form.name.value,
+            category: form.category.value,
+            sellingPrice: parseFloat(form.sellingPrice.value) || 0,
+            ingredients: ingredients
+        };
+
+        saveDataToStorage();
+        closeModal('add-recipe-modal');
+        resetRecipeForm();
+        renderRecipes();
+        alert('Recipe updated!');
+    }
+}
+
+        function populateRecipeIngredientSelects() {
+            const options = inventoryData.ingredients.map(ing => 
+                `<option value="${ing.id}">${ing.name} (${ing.unit})</option>`
+            ).join('');
+            document.querySelectorAll('.ingredient-select').forEach(select => {
+                select.innerHTML = '<option value="">Select Ingredient</option>' + options;
+            });
+        }
+
+        function saveRecipe(e) {
+            e.preventDefault();
+            const form = e.target;
+            const rows = document.querySelectorAll('#recipe-ingredients-container .ingredient-row');
+            const ingredients = [];
+
+            rows.forEach(row => {
+                const selects = row.querySelectorAll('select');
+                const inputs = row.querySelectorAll('input');
+                if (selects[0].value && inputs[0].value) {
+                    ingredients.push({
+                        ingredientId: parseInt(selects[0].value),
+                        qty: parseFloat(inputs[0].value),
+                        unit: selects[1].value
+                    });
+                }
+            });
+
+            const newRecipe = {
+                id: generateId(),
+                name: form.name.value,
+                category: form.category.value,
+                sellingPrice: parseFloat(form.sellingPrice.value) || 0,
+                ingredients: ingredients
+            };
+
+            inventoryData.recipes.push(newRecipe);
+            saveDataToStorage(); // Save after adding recipe
+            closeModal('add-recipe-modal');
+            resetRecipeForm();
+            renderRecipes();
+            alert('Recipe saved!');
+        }
+
+        function resetRecipeForm() {
+    const form = document.getElementById('recipe-form');
+    form.reset();
+    document.getElementById('edit-recipe-id').value = '';
+    
+    // Reset modal title
+    document.querySelector('#add-recipe-modal .modal-title').innerHTML = '<i class="fas fa-utensils"></i> Add New Recipe';
+    
+    // Reset submit handler
+    form.onsubmit = saveRecipe;
+            form.onsubmit = saveRecipe;
+            document.getElementById('recipe-ingredients-container').innerHTML = `
+                <div class="ingredient-row">
+                    <select class="form-select ingredient-select" required><option value="">Select Ingredient</option></select>
+                    <input type="number" class="form-input" placeholder="Qty" step="0.01" required>
+                    <select class="form-select"><option value="kg">kg</option><option value="g">g</option><option value="pcs">pcs</option></select>
+                    <button type="button" class="remove-ingredient" onclick="removeIngredientRow(this)"><i class="fas fa-trash"></i></button>
+                </div>
+            `;
+            populateRecipeIngredientSelects();
+        }
+
+        function deleteRecipe(id) {
+            if (!confirm('Delete this recipe?')) return;
+            inventoryData.recipes = inventoryData.recipes.filter(r => r.id !== id);
+            saveDataToStorage();
+            renderRecipes();
+        }
+
+        // ==========================================
+        // CONSUMPTION FUNCTIONS
+        // ==========================================
+        function simulateRecipeSale(recipeId) {
+    const recipe = inventoryData.recipes.find(r => r.id === recipeId);
+    if (!recipe) return;
+
+    const insufficient = [];
+    
+    // Check stock for all ingredients
+    recipe.ingredients.forEach(ing => {
+        let ingredient = null;
+        
+        if (ing.ingredientId) {
+            ingredient = inventoryData.ingredients.find(i => i.id === ing.ingredientId);
+        } else if (ing.name) {
+            ingredient = inventoryData.ingredients.find(i => 
+                i.name.toLowerCase().trim() === ing.name.toLowerCase().trim()
+            );
+        }
+        
+        if (ingredient && ingredient.currentStock < (parseFloat(ing.qty) || 0)) {
+            insufficient.push(ingredient.name);
+        }
+    });
+
+    if (insufficient.length > 0) {
+        alert('Insufficient stock: ' + insufficient.join(', '));
+        return;
+    }
+
+    // Deduct stock
+    recipe.ingredients.forEach(ing => {
+        let ingredient = null;
+        
+        if (ing.ingredientId) {
+            ingredient = inventoryData.ingredients.find(i => i.id === ing.ingredientId);
+        } else if (ing.name) {
+            ingredient = inventoryData.ingredients.find(i => 
+                i.name.toLowerCase().trim() === ing.name.toLowerCase().trim()
+            );
+        }
+        
+        if (ingredient) {
+            ingredient.currentStock -= (parseFloat(ing.qty) || 0);
+        }
+    });
+
+    const logEntry = {
+        id: generateId(),
+        timestamp: new Date().toISOString(),
+        recipeId: recipe.id,
+        recipeName: recipe.name,
+        type: 'sale',
+        ingredients: recipe.ingredients.map(ing => {
+            let ingredient = null;
+            let costPerUnit = 0;
+            let name = ing.name || 'Unknown';
+            
+            if (ing.ingredientId) {
+                ingredient = inventoryData.ingredients.find(i => i.id === ing.ingredientId);
+            } else if (ing.name) {
+                ingredient = inventoryData.ingredients.find(i => 
+                    i.name.toLowerCase().trim() === ing.name.toLowerCase().trim()
+                );
+            }
+            
+            if (ingredient) {
+                costPerUnit = ingredient.costPerUnit;
+                name = ingredient.name;
+            }
+            
+            const qty = parseFloat(ing.qty) || 0;
+            
+            return {
+                ingredientId: ingredient ? ingredient.id : null,
+                name: name,
+                qty: qty,
+                unit: ing.unit || 'pcs',
+                cost: qty * costPerUnit
+            };
+        })
+    };
+
+    inventoryData.consumptionLog.unshift(logEntry);
+    saveDataToStorage();
+    
+    renderIngredients();
+    renderConsumption();
+    refreshDashboard();
+    alert(`${recipe.name} sold! Stock deducted.`);
+}
+
+        function simulateSale() {
+            if (inventoryData.recipes.length === 0) {
+                alert('No recipes available.');
+                return;
+            }
+            const randomRecipe = inventoryData.recipes[Math.floor(Math.random() * inventoryData.recipes.length)];
+            simulateRecipeSale(randomRecipe.id);
+        }
+
+        function renderConsumption() {
+            renderConsumptionLive();
+        }
+
+        function renderConsumptionLive() {
+            const container = document.getElementById('consumption-feed');
+            if (inventoryData.consumptionLog.length === 0) {
+                container.innerHTML = `<div style="text-align: center; padding: 40px; color: var(--gray);"><i class="fas fa-utensils" style="font-size: 48px;"></i><h3>No Consumption Yet</h3></div>`;
+                return;
+            }
+
+            container.innerHTML = inventoryData.consumptionLog.slice(0, 20).map(log => `
+                <div style="background: white; border: 2px solid #e5e7eb; border-radius: 15px; padding: 20px; margin-bottom: 15px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 15px; border-bottom: 1px solid #f3f4f6; padding-bottom: 15px;">
+                        <span style="font-weight: 900;">${log.recipeName}</span>
+                        <span style="color: var(--gray); font-size: 13px;">${new Date(log.timestamp).toLocaleString()}</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        ${log.ingredients.map(ing => `
+                            <div style="display: flex; justify-content: space-between; padding: 10px; background: #f8fafc; border-radius: 10px;">
+                                <span>${ing.name}</span>
+                                <span style="font-weight: 700;">-${ing.qty} ${ing.unit} (${formatCurrency(ing.cost)})</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // ==========================================
+        // CLOSING FUNCTIONS
         // ==========================================
         function generateClosingTable() {
             const tbody = document.getElementById('closing-table-body');
-
             tbody.innerHTML = inventoryData.ingredients.map(ing => `
                 <tr>
                     <td style="font-weight: 700;">${ing.name}</td>
                     <td>${ing.currentStock.toFixed(2)}</td>
-                    <td>
-                        <input type="number" class="form-input" name="physical_${ing.id}" step="0.01" required style="width: 120px;" value="${ing.currentStock.toFixed(2)}">
-                    </td>
+                    <td><input type="number" class="form-input" name="physical_${ing.id}" step="0.01" required style="width: 120px;" value="${ing.currentStock.toFixed(2)}"></td>
                     <td>${ing.unit}</td>
-                    <td>
-                        <input type="text" class="form-input" name="notes_${ing.id}" placeholder="Any notes..." style="width: 150px;">
-                    </td>
+                    <td><input type="text" class="form-input" name="notes_${ing.id}" placeholder="Notes" style="width: 150px;"></td>
                 </tr>
             `).join('');
         }
@@ -3387,11 +3400,7 @@ function resetRecipeForm() {
         function saveClosing(e) {
             e.preventDefault();
             const form = e.target;
-            const date = form.date.value;
-            const closedBy = form.closedBy.value;
-
             const closingItems = [];
-            let totalVariance = 0;
             let totalVarianceValue = 0;
 
             inventoryData.ingredients.forEach(ing => {
@@ -3411,32 +3420,26 @@ function resetRecipeForm() {
                     notes: form[`notes_${ing.id}`].value
                 });
 
-                totalVariance += Math.abs(variance);
                 totalVarianceValue += Math.abs(varianceValue);
-
-                // Update actual stock to physical count
                 ing.currentStock = physical;
             });
 
             const closing = {
                 id: generateId(),
-                date: date,
-                closedBy: closedBy,
+                date: form.date.value,
+                closedBy: form.closedBy.value,
                 items: closingItems,
-                totalVariance: totalVariance,
                 totalVarianceValue: totalVarianceValue
             };
 
             inventoryData.closingHistory.unshift(closing);
-
+            saveDataToStorage(); // Save after closing
+            
             closeModal('closing-modal');
-            form.reset();
-
             renderIngredients();
             refreshDashboard();
             loadClosingData();
-
-            alert(`Night closing saved! Total variance: ${formatCurrency(totalVarianceValue)}`);
+            alert(`Closing saved! Variance: ${formatCurrency(totalVarianceValue)}`);
         }
 
         function loadClosingData() {
@@ -3445,58 +3448,32 @@ function resetRecipeForm() {
             const summaryDiv = document.getElementById('closing-summary');
 
             let closing = inventoryData.closingHistory[0];
-            if (dateFilter) {
-                closing = inventoryData.closingHistory.find(c => c.date === dateFilter);
-            }
+            if (dateFilter) closing = inventoryData.closingHistory.find(c => c.date === dateFilter);
 
             if (!closing) {
-                tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 40px;">No closing data for selected date</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 40px;">No closing data</td></tr>';
                 summaryDiv.innerHTML = '';
                 return;
             }
 
-            // Summary cards
-            const theftItems = closing.items.filter(i => i.variance < 0);
-            const excessItems = closing.items.filter(i => i.variance > 0);
-
             summaryDiv.innerHTML = `
-                <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
-                    <div class="stat-card">
-                        <div class="stat-label">Total Items Checked</div>
-                        <div class="stat-value">${closing.items.length}</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Total Variance</div>
-                        <div class="stat-value" style="color: ${closing.totalVarianceValue > 1000 ? 'var(--danger)' : 'var(--success)'}">${formatCurrency(closing.totalVarianceValue)}</div>
-                    </div>
-                    <div class="stat-card warning">
-                        <div class="stat-label">Potential Theft/Loss</div>
-                        <div class="stat-value" style="color: var(--danger);">${theftItems.length} items</div>
-                    </div>
-                    <div class="stat-card success">
-                        <div class="stat-label">Excess Stock</div>
-                        <div class="stat-value" style="color: var(--success);">${excessItems.length} items</div>
-                    </div>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                    <div class="stat-card"><div class="stat-label">Items Checked</div><div class="stat-value">${closing.items.length}</div></div>
+                    <div class="stat-card"><div class="stat-label">Variance Value</div><div class="stat-value" style="color: ${closing.totalVarianceValue > 1000 ? 'var(--danger)' : 'var(--success)'}">${formatCurrency(closing.totalVarianceValue)}</div></div>
                 </div>
             `;
 
-            // Variance table
             tbody.innerHTML = closing.items.map(item => {
-                const status = item.variance < 0 ? { label: 'SHORTAGE', class: 'badge-danger' } :
-                              item.variance > 0 ? { label: 'EXCESS', class: 'badge-success' } :
-                              { label: 'MATCH', class: 'badge-info' };
-
+                const status = item.variance < 0 ? { label: 'SHORT', class: 'badge-danger' } : item.variance > 0 ? { label: 'EXCESS', class: 'badge-success' } : { label: 'OK', class: 'badge-info' };
                 return `
-                    <tr style="${Math.abs(item.varianceValue) > 500 ? 'background: #fee2e2;' : ''}">
+                    <tr>
                         <td style="font-weight: 700;">${item.name}</td>
                         <td>${item.expected.toFixed(2)}</td>
-                        <td>+${(item.physical - item.expected + item.variance).toFixed(2)}</td>
-                        <td>-${(item.expected - item.physical + item.variance).toFixed(2)}</td>
+                        <td>-</td>
+                        <td>-</td>
                         <td style="font-weight: 800;">${item.expected.toFixed(2)}</td>
                         <td style="font-weight: 800; color: var(--primary);">${item.physical.toFixed(2)}</td>
-                        <td class="${item.variance < 0 ? 'variance-negative' : item.variance > 0 ? 'variance-positive' : ''}">
-                            ${item.variance > 0 ? '+' : ''}${item.variance.toFixed(2)}
-                        </td>
+                        <td class="${item.variance < 0 ? 'variance-negative' : 'variance-positive'}">${item.variance > 0 ? '+' : ''}${item.variance.toFixed(2)}</td>
                         <td class="cost-display">${formatCurrency(item.varianceValue)}</td>
                         <td><span class="badge ${status.class}">${status.label}</span></td>
                     </tr>
@@ -3505,271 +3482,82 @@ function resetRecipeForm() {
         }
 
         // ==========================================
-        // EXCEL IMPORT/EXPORT
+        // DATA MANAGEMENT FUNCTIONS
         // ==========================================
-        function downloadTemplate(type) {
-            let data = [];
-            let filename = '';
-
-            if (type === 'ingredients') {
-                filename = 'OvenX_Ingredients_Template.xlsx';
-                data = [
-                    ['Name', 'Category', 'Unit', 'CurrentStock', 'MinLevel', 'CostPerUnit', 'Supplier', 'Location'],
-                    ['Chicken Breast', 'meat', 'kg', 0, 10, 450, 'Supplier Name', 'Cold Storage A'],
-                    ['Mozzarella Cheese', 'dairy', 'kg', 0, 5, 850, 'Dairy Fresh', 'Cold Storage B'],
-                    ['Burger Buns', 'dry', 'pcs', 0, 50, 25, 'Bakery Plus', 'Dry Store']
-                ];
-            } else if (type === 'recipes') {
-                filename = 'OvenX_Recipes_Template.xlsx';
-                data = [
-                    ['RecipeName', 'Category', 'SellingPrice', 'Ingredient1', 'Qty1', 'Unit1', 'Ingredient2', 'Qty2', 'Unit2'],
-                    ['Zinger Burger', 'burger', 420, 'Burger Buns', 1, 'pcs', 'Chicken Breast', 0.15, 'kg'],
-                    ['Margherita Pizza', 'pizza', 999, 'Mozzarella Cheese', 0.3, 'kg', 'Tomato Sauce', 0.1, 'kg']
-                ];
-            }
-
-            const ws = XLSX.utils.aoa_to_sheet(data);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Template');
-            XLSX.writeFile(wb, filename);
+        function exportAllData() {
+            const dataStr = JSON.stringify(inventoryData, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `OvenX_Backup_${new Date().toISOString().slice(0,10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            alert('Data exported! Keep this file safe as backup.');
         }
 
-        function handleExcelUpload(e) {
+        function importDataFromFile(e) {
             const file = e.target.files[0];
             if (!file) return;
-
+            
             const reader = new FileReader();
             reader.onload = function(event) {
-                const data = new Uint8Array(event.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
-                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
-
-                // Process import
-                processExcelImport(jsonData);
-            };
-            reader.readAsArrayBuffer(file);
-        }
-
-        function processExcelImport(data) {
-            if (data.length < 2) {
-                alert('File appears to be empty or invalid');
-                return;
-            }
-
-            const headers = data[0].map(h => h.toLowerCase().replace(/\s/g, ''));
-            let imported = 0;
-            let updated = 0;
-
-            // Check if it's ingredients or recipes
-            if (headers.includes('currentstock') || headers.includes('minlevel')) {
-                // Import ingredients
-                for (let i = 1; i < data.length; i++) {
-                    const row = data[i];
-                    if (!row[0]) continue;
-
-                    const ingredient = {
-                        id: generateId(),
-                        name: row[0],
-                        category: row[1] || 'dry',
-                        unit: row[2] || 'pcs',
-                        currentStock: parseFloat(row[3]) || 0,
-                        minLevel: parseFloat(row[4]) || 0,
-                        costPerUnit: parseFloat(row[5]) || 0,
-                        supplier: row[6] || '',
-                        location: row[7] || ''
-                    };
-
-                    // Check if exists
-                    const existing = inventoryData.ingredients.find(ing => 
-                        ing.name.toLowerCase() === ingredient.name.toLowerCase()
-                    );
-
-                    if (existing) {
-                        Object.assign(existing, ingredient);
-                        updated++;
+                try {
+                    const data = JSON.parse(event.target.result);
+                    if (data.ingredients && data.recipes) {
+                        if (confirm('This will replace all current data. Continue?')) {
+                            Object.assign(inventoryData, data);
+                            saveDataToStorage();
+                            location.reload();
+                        }
                     } else {
-                        inventoryData.ingredients.push(ingredient);
-                        imported++;
+                        alert('Invalid backup file format.');
                     }
+                } catch (err) {
+                    alert('Error reading file: ' + err.message);
                 }
+            };
+            reader.readAsText(file);
+        }
 
-                alert(`Import complete! ${imported} new ingredients added, ${updated} updated.`);
-                renderIngredients();
-                refreshDashboard();
+        function clearAllData() {
+            if (confirm('WARNING: This will delete ALL data permanently!\\n\\nType DELETE to confirm:')) {
+                const confirmText = prompt('Type DELETE to confirm:');
+                if (confirmText === 'DELETE') {
+                    localStorage.removeItem(STORAGE_KEY);
+                    location.reload();
+                } else {
+                    alert('Cancelled.');
+                }
             }
-
-            closeModal('bulk-import-modal');
-        }
-
-        function handleBulkImport(e) {
-            handleExcelUpload(e);
-        }
-
-        function exportIngredients() {
-            const data = inventoryData.ingredients.map(ing => ({
-                'Name': ing.name,
-                'Category': ing.category,
-                'Unit': ing.unit,
-                'Current Stock': ing.currentStock,
-                'Min Level': ing.minLevel,
-                'Cost Per Unit': ing.costPerUnit,
-                'Total Value': ing.currentStock * ing.costPerUnit,
-                'Supplier': ing.supplier,
-                'Location': ing.location,
-                'Status': getStockStatus(ing).label
-            }));
-
-            const ws = XLSX.utils.json_to_sheet(data);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Ingredients');
-            XLSX.writeFile(wb, `OvenX_Inventory_${new Date().toISOString().slice(0,10)}.xlsx`);
-        }
-
-        function generateReport(type) {
-            let data = [];
-            let filename = '';
-
-            switch(type) {
-                case 'stock-ledger':
-                    filename = 'Stock_Ledger.xlsx';
-                    // Combine GRN and consumption data
-                    data = inventoryData.ingredients.map(ing => {
-                        const grnTotal = inventoryData.grnHistory.reduce((sum, grn) => {
-                            const item = grn.items.find(i => i.ingredientId === ing.id);
-                            return sum + (item ? item.qty : 0);
-                        }, 0);
-                        const consumed = inventoryData.consumptionLog.reduce((sum, log) => {
-                            const item = log.ingredients.find(i => i.ingredientId === ing.id);
-                            return sum + (item ? item.qty : 0);
-                        }, 0);
-
-                        return {
-                            'Ingredient': ing.name,
-                            'Opening': ing.currentStock + consumed - grnTotal,
-                            'Received (GRN)': grnTotal,
-                            'Consumed': consumed,
-                            'Current Stock': ing.currentStock,
-                            'Unit': ing.unit,
-                            'Value': ing.currentStock * ing.costPerUnit
-                        };
-                    });
-                    break;
-
-                case 'consumption-summary':
-                    filename = 'Consumption_Summary.xlsx';
-                    const consumption = {};
-                    inventoryData.consumptionLog.forEach(log => {
-                        log.ingredients.forEach(ing => {
-                            if (!consumption[ing.name]) {
-                                consumption[ing.name] = { qty: 0, cost: 0, unit: ing.unit };
-                            }
-                            consumption[ing.name].qty += ing.qty;
-                            consumption[ing.name].cost += ing.cost;
-                        });
-                    });
-                    data = Object.entries(consumption).map(([name, stats]) => ({
-                        'Ingredient': name,
-                        'Total Qty': stats.qty,
-                        'Unit': stats.unit,
-                        'Total Cost': stats.cost
-                    }));
-                    break;
-
-                case 'variance-report':
-                    filename = 'Variance_Report.xlsx';
-                    if (inventoryData.closingHistory.length > 0) {
-                        const latest = inventoryData.closingHistory[0];
-                        data = latest.items.map(item => ({
-                            'Date': latest.date,
-                            'Ingredient': item.name,
-                            'Expected': item.expected,
-                            'Physical': item.physical,
-                            'Variance': item.variance,
-                            'Variance Value': item.varianceValue,
-                            'Notes': item.notes
-                        }));
-                    }
-                    break;
-
-                case 'reorder-list':
-                    filename = 'Reorder_List.xlsx';
-                    data = inventoryData.ingredients
-                        .filter(ing => ing.currentStock <= ing.minLevel)
-                        .map(ing => ({
-                            'Ingredient': ing.name,
-                            'Current Stock': ing.currentStock,
-                            'Min Level': ing.minLevel,
-                            'Required': ing.minLevel * 2 - ing.currentStock,
-                            'Unit': ing.unit,
-                            'Supplier': ing.supplier
-                        }));
-                    break;
-
-                case 'full-inventory':
-                    filename = 'Full_Inventory.xlsx';
-                    data = inventoryData.ingredients.map(ing => ({
-                        ...ing,
-                        'Total Value': ing.currentStock * ing.costPerUnit,
-                        'Status': getStockStatus(ing).label
-                    }));
-                    break;
-            }
-
-            if (data.length === 0) {
-                alert('No data available for this report');
-                return;
-            }
-
-            const ws = XLSX.utils.json_to_sheet(data);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Report');
-            XLSX.writeFile(wb, filename);
-        }
-
-        function exportConsumption() {
-            const data = inventoryData.consumptionLog.map(log => ({
-                'Date': new Date(log.timestamp).toLocaleString(),
-                'Recipe': log.recipeName,
-                'Type': log.type,
-                'Ingredients': log.ingredients.map(i => `${i.name} (${i.qty} ${i.unit})`).join(', '),
-                'Total Cost': log.ingredients.reduce((sum, i) => sum + i.cost, 0)
-            }));
-
-            const ws = XLSX.utils.json_to_sheet(data);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Consumption Log');
-            XLSX.writeFile(wb, `Consumption_Log_${new Date().toISOString().slice(0,10)}.xlsx`);
         }
 
         // ==========================================
         // INITIALIZATION
         // ==========================================
         function showSyncStatus() {
-            alert('System Status:\n✅ Local Storage: Active\n✅ Sample Data: Loaded\n⚠️ Supabase: Not Connected (Integration Ready)\n\nAll features working in demo mode.');
+            const dataSize = new Blob([JSON.stringify(inventoryData)]).size;
+            alert(`OFFLINE MODE ACTIVE ✅\\n\\nData stored locally in browser\\nIngredients: ${inventoryData.ingredients.length}\\nRecipes: ${inventoryData.recipes.length}\\nGRNs: ${inventoryData.grnHistory.length}\\nData size: ${(dataSize/1024).toFixed(2)} KB\\n\\nAuto-save: Every 30 seconds`);
         }
 
         function logout() {
-            if (confirm('Are you sure you want to logout?')) {
+            if (confirm('Logout? Data is automatically saved.')) {
+                saveDataToStorage();
                 location.reload();
             }
         }
 
-        // Initialize on load
         document.addEventListener('DOMContentLoaded', function() {
             refreshDashboard();
             renderIngredients();
-
-            // Set today's date for filters
             document.getElementById('closing-date-filter').valueAsDate = new Date();
         });
 
-        // Close modals on outside click
         document.querySelectorAll('.modal-overlay').forEach(overlay => {
             overlay.addEventListener('click', function(e) {
-                if (e.target === this) {
-                    this.classList.remove('active');
-                }
+                if (e.target === this) this.classList.remove('active');
             });
         });
     </script>
