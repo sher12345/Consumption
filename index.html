@@ -2,28 +2,21 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Oven X - Inventory & Consumption Management</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <style>
-    <!-- ADD FIREBASE SCRIPT HERE -->
+  <!-- ADD FIREBASE SCRIPT HERE -->
     <script type="module">
       import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
 import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
       const firebaseConfig = {
-        apiKey: "AIzaSyAJ29hHBF3Wcly3pIeozqC4m38czYXGVU0",
-        authDomain: "consumption-5160e.firebaseapp.com",
-        databaseURL: "https://consumption-5160e-default-rtdb.firebaseio.com",
-        projectId: "consumption-5160e",
-        storageBucket: "consumption-5160e.firebasestorage.app",
-        messagingSenderId: "744018780980",
-        appId: "1:744018780980:web:7eb8aa7b862e3dc99e7b61",
-        measurementId: "G-6KVH681CQS"
-      };
+    apiKey: "AIzaSyAJ29hHBF3Wcly3pIeozqC4m38czYXGVU0",
+    authDomain: "consumption-5160e.firebaseapp.com",
+    databaseURL: "https://consumption-5160e-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "consumption-5160e",
+    storageBucket: "consumption-5160e.firebasestorage.app",
+    messagingSenderId: "744018780980",
+    appId: "1:744018780980:web:7eb8aa7b862e3dc99e7b61",
+    measurementId: "G-6KVH681CQS"
+};
 
       const app = initializeApp(firebaseConfig);
       const db = getDatabase(app);
@@ -38,7 +31,15 @@ import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/fir
       console.log('Firebase initialized');
     </script>
     <!-- END FIREBASE SCRIPT -->
-        * {
+  
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oven X - Inventory & Consumption Management</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+          * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
@@ -1394,13 +1395,31 @@ async function saveDataToStorage() {
             const dataRef = window.firebaseRef(db, 'ovenx/inventory');
             await window.firebaseSet(dataRef, inventoryData);
             console.log('✅ Data saved to Firebase');
-            showSaveNotification();
+            showNotification('Data saved!');  // Changed this
             return;
         } catch (err) {
             console.error('Firebase save failed:', err);
         }
     }
-    showSaveNotification();
+    showNotification('Data saved locally');  // Changed this
+}
+
+// Add this simple notification function
+function showNotification(message) {
+    // Try to use existing indicator if available
+    const indicator = document.getElementById('offline-status');
+    if (indicator) {
+        const originalText = indicator.innerHTML;
+        indicator.innerHTML = `<i class="fas fa-check-circle"></i> ${message}`;
+        indicator.style.background = '#10b981';
+        setTimeout(() => {
+            indicator.innerHTML = originalText;
+            indicator.style.background = '#10b981';
+        }, 2000);
+    } else {
+        // Fallback to alert
+        console.log(message);
+    }
 }
 
 function enableRealtimeSync() {
