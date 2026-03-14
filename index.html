@@ -11,6 +11,9 @@
     
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<!-- Font Awesome -->
     
     <!-- SheetJS for Excel handling -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -3278,6 +3281,134 @@ const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(i
                 });
             });
         });
+        // ==========================================
+// SUPABASE SYNC — Add-on (keeps existing code)
+// ==========================================
+const SUPABASE_URL = "https://frjcefugnvitexxcated.supabase.co";
+const SUPABASE_KEY = "sb_publishable_iymHBHXzWCXmXI4yUfQ_XQ__5EW47HJ";
+let sb = null;
+try { sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY); } catch(e) {}
+
+// Override saveDataToStorage to ALSO save to Supabase
+const _origSave = saveDataToStorage;
+saveDataToStorage = async function() {
+    await _origSave(); // keep existing IndexedDB/localStorage save
+    if (!sb) return;
+    try {
+        // Sync ingredients
+        for (const ing of inventoryData.ingredients) {
+            await sb.from('ingredients').upsert({
+                id: ing.id,
+                name: ing.name,
+                category: ing.category,
+                unit: ing.unit,
+                current_stock: ing.currentStock,
+                min_level: ing.minLevel,
+                cost_per_unit: ing.costPerUnit,
+                supplier: ing.supplier || '',
+                location: ing.location || ''
+            }, { onConflict: 'id' });
+        }
+        // Sync recipes
+        for (const rec of inventoryData.recipes) {
+            await sb.from('recipes').upsert({
+                id: rec.id,
+                name: rec.name,
+                category: rec.category,
+                selling_price: rec.sellingPrice,
+                ingredients: JSON.stringify(rec.ingredients)
+            }, { onConflict: 'id' });
+        }
+        // Sync GRN
+        for (const grn of inventoryData.grnHistory) {
+            await sb.from('grn').upsert({
+                id: grn.id,
+                grn_number: grn.grnNumber,
+                date: grn.date,
+                supplier: grn.supplier,
+                invoice_number: grn.invoiceNumber || '',
+                items: JSON.stringify(grn.items),
+                total: grn.total,
+                notes: grn.notes || ''
+            }, { onConflict: 'id' });
+        }
+        // Sync consumption log
+        for (const log of inventoryData.consumptionLog) {
+            await sb.from('consumption_log').upsert({
+                id: log.id,
+                recipe_id: log.recipeId || '',
+                recipe_name: log.recipeName || '',
+                ingredients: JSON.stringify(log.ingredients),
+                timestamp: log.timestamp
+            }, { onConflict: 'id' });
+        }
+        // Sync closing records
+        for (const cl of inventoryData.closingHistory) {
+            await sb.from('closing_records').upsert({
+                id: cl.id,
+                date: cl.date,
+                closed_by: cl.closedBy,
+                items: JSON.stringify(cl.items),
+                total_variance_value: cl.totalVarianceValue
+            }, { onConflict: 'id' });
+        }
+        showNotification('☁️ Synced to Supabase');
+    } catch(err) {
+        console.error('Supabase sync error:', err);
+    }
+};
+
+// Override loadDataFromStorage to load FROM Supabase first
+const _origLoad = loadDataFromStorage;
+loadDataFromStorage = async function() {
+    // Try Supabase first
+    if (sb) {
+        try {
+            const { data: ingredients } = await sb.from('ingredients').select('*').order('created_at');
+            const { data: recipes } = await sb.from('recipes').select('*').order('created_at');
+            const { data: grns } = await sb.from('grn').select('*').order('created_at', { ascending: false });
+            const { data: consumption } = await sb.from('consumption_log').select('*').order('timestamp', { ascending: false }).limit(200);
+            const { data: closings } = await sb.from('closing_records').select('*').order('created_at', { ascending: false }).limit(30);
+
+            if (ingredients && ingredients.length > 0) {
+                inventoryData.ingredients = ingredients.map(r => ({
+                    id: r.id, name: r.name, category: r.category, unit: r.unit,
+                    currentStock: parseFloat(r.current_stock) || 0,
+                    minLevel: parseFloat(r.min_level) || 0,
+                    costPerUnit: parseFloat(r.cost_per_unit) || 0,
+                    supplier: r.supplier || '', location: r.location || ''
+                }));
+                inventoryData.recipes = (recipes || []).map(r => ({
+                    id: r.id, name: r.name, category: r.category,
+                    sellingPrice: parseFloat(r.selling_price) || 0,
+                    ingredients: (() => { try { return JSON.parse(r.ingredients || '[]'); } catch { return []; } })()
+                }));
+                inventoryData.grnHistory = (grns || []).map(r => ({
+                    id: r.id, grnNumber: r.grn_number, date: r.date,
+                    supplier: r.supplier, invoiceNumber: r.invoice_number || '',
+                    items: (() => { try { return JSON.parse(r.items || '[]'); } catch { return []; } })(),
+                    total: parseFloat(r.total) || 0, notes: r.notes || '', timestamp: r.created_at
+                }));
+                inventoryData.consumptionLog = (consumption || []).map(r => ({
+                    id: r.id, timestamp: r.timestamp, recipeId: r.recipe_id || '',
+                    recipeName: r.recipe_name || '', type: 'sale',
+                    ingredients: (() => { try { return JSON.parse(r.ingredients || '[]'); } catch { return []; } })()
+                }));
+                inventoryData.closingHistory = (closings || []).map(r => ({
+                    id: r.id, date: r.date, closedBy: r.closed_by || '',
+                    items: (() => { try { return JSON.parse(r.items || '[]'); } catch { return []; } })(),
+                    totalVarianceValue: parseFloat(r.total_variance_value) || 0
+                }));
+                showNotification('☁️ Loaded from Supabase');
+                return true;
+            }
+        } catch(err) {
+            console.warn('Supabase load failed, falling back to local:', err);
+        }
+    }
+    // Fall back to existing IndexedDB/localStorage
+    return await _origLoad();
+};
     </script>
 </body>
 </html>
