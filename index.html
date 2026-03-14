@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1327,13 +1326,14 @@
                             </button>
                         </div>
                         
-                        <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px; padding: 10px; background: #f8fafc; border-radius: 8px; margin-bottom: 10px; font-weight: 700; font-size: 12px; color: var(--gray); text-transform: uppercase;">
-                            <div>Ingredient</div>
-                            <div>Quantity</div>
-                            <div>Unit Cost</div>
-                            <div>Total</div>
-                            <div></div>
-                        </div>
+                        <div style="display: grid; grid-template-columns: 2fr 1.5fr 1fr 1fr 1fr auto; gap: 10px; padding: 10px; background: #f8fafc; border-radius: 8px; margin-bottom: 10px; font-weight: 700; font-size: 12px; color: var(--gray); text-transform: uppercase;">
+    <div>Ingredient</div>
+    <div>Supplier / Store</div>
+    <div>Quantity</div>
+    <div>Unit Cost</div>
+    <div>Total</div>
+    <div></div>
+</div>
                         
                         <div id="grn-items-container" style="max-height: 300px; overflow-y: auto;">
                             <!-- Rows will be added here dynamically -->
@@ -2696,11 +2696,12 @@ window._editingRecipe = false;
     ).join('');
     
     return `
-        <div class="grn-item-row" style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: center; background: white; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb;">
+        <div class="grn-item-row" style="display: grid; grid-template-columns: 2fr 1.5fr 1fr 1fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: center; background: white; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb;">
             <select class="form-select grn-item-select" required onchange="updateGRNRowTotal(this)" style="width: 100%;">
                 <option value="">Select Ingredient</option>
                 ${options}
             </select>
+            <input type="text" class="form-input grn-item-supplier" placeholder="Supplier / Store" style="width: 100%;">
             <input type="number" class="form-input" placeholder="0.00000" step="0.00001" min="0.00001" required onchange="updateGRNRowTotal(this)" style="text-align: right;">
             <input type="number" class="form-input" placeholder="0.00000" step="0.00001" min="0" required onchange="updateGRNRowTotal(this)" style="text-align: right;">
             <div class="row-total" style="font-weight: 700; color: var(--dark); text-align: right;">Rs 0.00</div>
@@ -2732,12 +2733,10 @@ window._editingRecipe = false;
         
         function updateGRNRowTotal(element) {
     const row = element.closest('.grn-item-row');
-    const inputs = row.querySelectorAll('input');
+    const inputs = row.querySelectorAll('input[type="number"]');
     const qty = parseFloat(inputs[0].value) || 0;
     const cost = parseFloat(inputs[1].value) || 0;
     const total = qty * cost;
-    
-    // Show more decimal places for precision
     row.querySelector('.row-total').textContent = 'Rs ' + total.toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 5});
     updateGRNTotals();
 }
@@ -2745,16 +2744,13 @@ window._editingRecipe = false;
         function updateGRNTotals() {
     let grandTotal = 0;
     let itemCount = 0;
-    
     document.querySelectorAll('.grn-item-row').forEach(row => {
-        const inputs = row.querySelectorAll('input');
+        const inputs = row.querySelectorAll('input[type="number"]');
         const qty = parseFloat(inputs[0].value) || 0;
         const cost = parseFloat(inputs[1].value) || 0;
         grandTotal += qty * cost;
         if (qty > 0) itemCount++;
     });
-    
-    // Allow up to 5 decimal places for display
     document.getElementById('grn-grand-total').textContent = 'Rs ' + grandTotal.toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 5});
     document.getElementById('total-items-count').textContent = itemCount;
 }
@@ -2771,8 +2767,11 @@ window._editingRecipe = false;
                 const inputs = row.querySelectorAll('input');
                 
                 const ingredientId = parseInt(select.value);
-                const qty = parseFloat(inputs[0].value);
-                const unitCost = parseFloat(inputs[1].value);
+const supplierInput = row.querySelector('.grn-item-supplier');
+const itemSupplier = supplierInput ? supplierInput.value.trim() : '';
+const inputs_num = row.querySelectorAll('input[type="number"]');
+const qty = parseFloat(inputs_num[0].value);
+const unitCost = parseFloat(inputs_num[1].value);
                 
                 if (!ingredientId || !qty || unitCost === undefined) {
                     hasError = true;
@@ -2785,13 +2784,14 @@ window._editingRecipe = false;
                 const ingredient = inventoryData.ingredients.find(i => i.id === ingredientId);
                 if (ingredient) {
                     items.push({
-                        ingredientId: ingredientId,
-                        name: ingredient.name,
-                        qty: qty,
-                        unit: ingredient.unit,
-                        unitCost: unitCost,
-                        total: qty * unitCost
-                    });
+    ingredientId: ingredientId,
+    name: ingredient.name,
+    qty: qty,
+    unit: ingredient.unit,
+    unitCost: unitCost,
+    total: qty * unitCost,
+    itemSupplier: itemSupplier   // ← add this line
+});
                     ingredient.currentStock += qty;
                 }
             });
@@ -2937,23 +2937,61 @@ window._editingRecipe = false;
         }
         
         function printGRN(id) {
-            const grn = inventoryData.grnHistory.find(g => g.id === id);
-            if (!grn) return;
-            const printWindow = window.open('', '_blank');
-            printWindow.document.write(`
-                <html><head><title>GRN ${grn.grnNumber}</title>
-                <style>body{font-family:Arial;padding:40px}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{border:1px solid #ddd;padding:12px}</style>
-                </head><body>
-                <h2>GOODS RECEIPT NOTE - ${grn.grnNumber}</h2>
-                <p>Date: ${formatDate(grn.date)}<br>Supplier: ${grn.supplier}</p>
-                <table><thead><tr><th>Item</th><th>Qty</th><th>Unit Cost</th><th>Total</th></tr></thead>
-                <tbody>${grn.items.map(i => `<tr><td>${i.name}</td><td>${i.qty} ${i.unit}</td><td>Rs ${i.unitCost.toFixed(2)}</td><td>Rs ${i.total.toFixed(2)}</td></tr>`).join('')}</tbody>
-                </table><h3 style="text-align:right">Total: Rs ${grn.total.toFixed(2)}</h3>
-                </body></html>
-            `);
-            printWindow.document.close();
-            printWindow.print();
-        }
+    const grn = inventoryData.grnHistory.find(g => g.id === id);
+    if (!grn) return;
+
+    // Group items by supplier
+    const supplierGroups = {};
+    grn.items.forEach(item => {
+        const key = item.itemSupplier || grn.supplier || 'Main Supplier';
+        if (!supplierGroups[key]) supplierGroups[key] = [];
+        supplierGroups[key].push(item);
+    });
+
+    const supplierSections = Object.entries(supplierGroups).map(([supplier, items]) => {
+        const subtotal = items.reduce((s, i) => s + i.total, 0);
+        return `
+            <h3 style="margin-top:25px;margin-bottom:8px;color:#059669;border-bottom:2px solid #059669;padding-bottom:4px;">
+                🏪 ${supplier}
+            </h3>
+            <table>
+                <thead><tr><th>Item</th><th>Qty</th><th>Unit Cost</th><th>Total</th></tr></thead>
+                <tbody>
+                    ${items.map(i => `<tr>
+                        <td>${i.name}</td>
+                        <td>${i.qty} ${i.unit}</td>
+                        <td>Rs ${i.unitCost.toFixed(2)}</td>
+                        <td>Rs ${i.total.toFixed(2)}</td>
+                    </tr>`).join('')}
+                </tbody>
+                <tfoot><tr>
+                    <td colspan="3" style="text-align:right;font-weight:bold;">Subtotal:</td>
+                    <td style="font-weight:bold;">Rs ${subtotal.toFixed(2)}</td>
+                </tr></tfoot>
+            </table>`;
+    }).join('');
+
+    const pw = window.open('', '_blank');
+    pw.document.write(`
+        <html><head><title>GRN ${grn.grnNumber}</title>
+        <style>
+            body{font-family:Arial;padding:40px}
+            table{width:100%;border-collapse:collapse;margin-top:10px}
+            th,td{border:1px solid #ddd;padding:10px}
+            th{background:#f8fafc}
+            tfoot td{background:#f0fdf4}
+        </style></head><body>
+        <h2>GOODS RECEIPT NOTE — ${grn.grnNumber}</h2>
+        <p>Date: ${formatDate(grn.date)} &nbsp;|&nbsp; Invoice: ${grn.invoiceNumber || '—'}</p>
+        ${supplierSections}
+        <h3 style="text-align:right;margin-top:20px;font-size:20px;">
+            GRAND TOTAL: Rs ${grn.total.toFixed(2)}
+        </h3>
+        </body></html>
+    `);
+    pw.document.close();
+    pw.print();
+}
         function editGRN(id) {
     const grn = inventoryData.grnHistory.find(g => g.id === id);
     if (!grn) return;
@@ -2986,12 +3024,13 @@ window._editingRecipe = false;
 
         const div = document.createElement('div');
         div.className = 'grn-item-row';
-        div.style.cssText = 'display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: center; background: white; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb;';
+        div.style.cssText = 'display: grid; grid-template-columns: 2fr 1.5fr 1fr 1fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: center; background: white; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb;';
         div.innerHTML = `
             <select class="form-select grn-item-select" required onchange="updateGRNRowTotal(this)" style="width: 100%;">
                 <option value="">Select Ingredient</option>
                 ${options}
             </select>
+            <input type="text" class="form-input grn-item-supplier" placeholder="Supplier / Store" value="${item.itemSupplier || ''}" style="width: 100%;">
             <input type="number" class="form-input" placeholder="0.00000" step="0.00001" min="0.00001" value="${item.qty}" required onchange="updateGRNRowTotal(this)" style="text-align: right;">
             <input type="number" class="form-input" placeholder="0.00000" step="0.00001" min="0" value="${item.unitCost}" required onchange="updateGRNRowTotal(this)" style="text-align: right;">
             <div class="row-total" style="font-weight: 700; color: var(--dark); text-align: right;">Rs ${(item.qty * item.unitCost).toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 5})}</div>
@@ -3004,7 +3043,6 @@ window._editingRecipe = false;
 
     updateGRNTotals();
 
-    // Override save to update instead of create
     form.onsubmit = function(e) {
         e.preventDefault();
 
@@ -3013,10 +3051,12 @@ window._editingRecipe = false;
 
         document.querySelectorAll('.grn-item-row').forEach((row) => {
             const select = row.querySelector('select');
-            const inputs = row.querySelectorAll('input');
             const ingredientId = parseInt(select.value);
-            const qty = parseFloat(inputs[0].value);
-            const unitCost = parseFloat(inputs[1].value);
+            const numInputs = row.querySelectorAll('input[type="number"]');
+            const supplierInput = row.querySelector('.grn-item-supplier');
+            const itemSupplier = supplierInput ? supplierInput.value.trim() : '';
+            const qty = parseFloat(numInputs[0].value);
+            const unitCost = parseFloat(numInputs[1].value);
 
             if (!ingredientId || !qty || unitCost === undefined) {
                 hasError = true;
@@ -3033,7 +3073,8 @@ window._editingRecipe = false;
                     qty: qty,
                     unit: ingredient.unit,
                     unitCost: unitCost,
-                    total: qty * unitCost
+                    total: qty * unitCost,
+                    itemSupplier: itemSupplier
                 });
             }
         });
@@ -3070,17 +3111,14 @@ window._editingRecipe = false;
 
         saveDataToStorage();
         closeModal('grn-modal');
-
-        // Restore readonly on GRN number for future new GRNs
         if (grnNumberInput) grnNumberInput.setAttribute('readonly', true);
         form.onsubmit = saveGRN;
-
         renderGRN();
         renderIngredients();
         refreshDashboard();
         showNotification('✅ GRN updated successfully!');
     };
-}
+}    
         
         // ==========================================
         // CONSUMPTION FUNCTIONS
