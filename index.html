@@ -2997,24 +2997,22 @@ const unitCost = parseFloat(inputs_num[1].value);
     const grn = inventoryData.grnHistory.find(g => g.id === id);
     if (!grn) return;
 
-    // Open modal directly without resetGRNForm
-document.getElementById('grn-modal').classList.add('active');
+    // Open modal FIRST (this calls resetGRNForm, clearing everything)
+    openModal('grn-modal');
 
-    // Override the GRN number (make it editable for this session)
+    // NOW override everything AFTER the reset
     const grnNumberInput = document.getElementById('auto-grn-number');
     if (grnNumberInput) {
         grnNumberInput.value = grn.grnNumber;
         grnNumberInput.removeAttribute('readonly');
     }
 
-    // Fill header fields
     const form = document.getElementById('grn-form');
     form.date.value = grn.date;
     form.supplier.value = grn.supplier;
     form.invoiceNumber.value = grn.invoiceNumber || '';
     form.notes.value = grn.notes || '';
 
-    // Rebuild items rows
     const container = document.getElementById('grn-items-container');
     container.innerHTML = '';
 
@@ -3083,19 +3081,16 @@ document.getElementById('grn-modal').classList.add('active');
         if (hasError) { alert('Please fill in all item details correctly.'); return; }
         if (items.length === 0) { alert('Please add at least one item.'); return; }
 
-        // Revert old stock changes
         grn.items.forEach(oldItem => {
             const ingredient = inventoryData.ingredients.find(i => i.id === oldItem.ingredientId);
             if (ingredient) ingredient.currentStock -= oldItem.qty;
         });
 
-        // Apply new stock changes
         items.forEach(newItem => {
             const ingredient = inventoryData.ingredients.find(i => i.id === newItem.ingredientId);
             if (ingredient) ingredient.currentStock += newItem.qty;
         });
 
-        // Update the GRN record
         const idx = inventoryData.grnHistory.findIndex(g => g.id === id);
         if (idx !== -1) {
             inventoryData.grnHistory[idx] = {
