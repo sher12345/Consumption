@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2996,8 +2997,8 @@ const unitCost = parseFloat(inputs_num[1].value);
     const grn = inventoryData.grnHistory.find(g => g.id === id);
     if (!grn) return;
 
-    // Open modal and wait for it to render
-    openModal('grn-modal');
+    // Open modal directly without resetGRNForm
+document.getElementById('grn-modal').classList.add('active');
 
     // Override the GRN number (make it editable for this session)
     const grnNumberInput = document.getElementById('auto-grn-number');
