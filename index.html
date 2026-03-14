@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2846,13 +2845,16 @@ window._editingRecipe = false;
                     ${grn.notes ? `<div style="margin-top: 15px; padding: 15px; background: #fef3c7; border-radius: 10px; font-size: 13px;"><i class="fas fa-sticky-note"></i> ${grn.notes}</div>` : ''}
                     
                     <div style="margin-top: 15px; display: flex; justify-content: flex-end; gap: 10px;">
-                        <button class="btn btn-secondary" onclick="printGRN('${grn.id}')" style="padding: 8px 16px; font-size: 12px;">
-                            <i class="fas fa-print"></i> Print
-                        </button>
-                        <button class="btn btn-danger" onclick="deleteGRN('${grn.id}')" style="padding: 8px 16px; font-size: 12px;">
-                            <i class="fas fa-trash"></i> Delete
-                        </button>
-                    </div>
+    <button class="btn btn-secondary" onclick="printGRN('${grn.id}')" style="padding: 8px 16px; font-size: 12px;">
+        <i class="fas fa-print"></i> Print
+    </button>
+    <button class="btn btn-warning" onclick="editGRN('${grn.id}')" style="padding: 8px 16px; font-size: 12px;">
+        <i class="fas fa-edit"></i> Edit
+    </button>
+    <button class="btn btn-danger" onclick="deleteGRN('${grn.id}')" style="padding: 8px 16px; font-size: 12px;">
+        <i class="fas fa-trash"></i> Delete
+    </button>
+</div>
                 </div>
             `).join('');
         }
@@ -2898,6 +2900,133 @@ window._editingRecipe = false;
             printWindow.document.close();
             printWindow.print();
         }
+        function editGRN(id) {
+    const grn = inventoryData.grnHistory.find(g => g.id === id);
+    if (!grn) return;
+
+    // Open modal and wait for it to render
+    openModal('grn-modal');
+
+    // Override the GRN number (make it editable for this session)
+    const grnNumberInput = document.getElementById('auto-grn-number');
+    if (grnNumberInput) {
+        grnNumberInput.value = grn.grnNumber;
+        grnNumberInput.removeAttribute('readonly');
+    }
+
+    // Fill header fields
+    const form = document.getElementById('grn-form');
+    form.date.value = grn.date;
+    form.supplier.value = grn.supplier;
+    form.invoiceNumber.value = grn.invoiceNumber || '';
+    form.notes.value = grn.notes || '';
+
+    // Rebuild items rows
+    const container = document.getElementById('grn-items-container');
+    container.innerHTML = '';
+
+    grn.items.forEach((item, index) => {
+        const options = inventoryData.ingredients.map(ing =>
+            `<option value="${ing.id}" data-unit="${ing.unit}" ${ing.id === item.ingredientId ? 'selected' : ''}>${ing.name} (${ing.unit})</option>`
+        ).join('');
+
+        const div = document.createElement('div');
+        div.className = 'grn-item-row';
+        div.style.cssText = 'display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: center; background: white; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb;';
+        div.innerHTML = `
+            <select class="form-select grn-item-select" required onchange="updateGRNRowTotal(this)" style="width: 100%;">
+                <option value="">Select Ingredient</option>
+                ${options}
+            </select>
+            <input type="number" class="form-input" placeholder="0.00000" step="0.00001" min="0.00001" value="${item.qty}" required onchange="updateGRNRowTotal(this)" style="text-align: right;">
+            <input type="number" class="form-input" placeholder="0.00000" step="0.00001" min="0" value="${item.unitCost}" required onchange="updateGRNRowTotal(this)" style="text-align: right;">
+            <div class="row-total" style="font-weight: 700; color: var(--dark); text-align: right;">Rs ${(item.qty * item.unitCost).toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 5})}</div>
+            <button type="button" class="remove-ingredient" onclick="removeGRNRow(this)" ${index === 0 ? 'style="opacity: 0.3;" disabled' : ''}>
+                <i class="fas fa-trash"></i>
+            </button>
+        `;
+        container.appendChild(div);
+    });
+
+    updateGRNTotals();
+
+    // Override save to update instead of create
+    form.onsubmit = function(e) {
+        e.preventDefault();
+
+        const items = [];
+        let hasError = false;
+
+        document.querySelectorAll('.grn-item-row').forEach((row) => {
+            const select = row.querySelector('select');
+            const inputs = row.querySelectorAll('input');
+            const ingredientId = parseInt(select.value);
+            const qty = parseFloat(inputs[0].value);
+            const unitCost = parseFloat(inputs[1].value);
+
+            if (!ingredientId || !qty || unitCost === undefined) {
+                hasError = true;
+                row.style.borderColor = 'var(--danger)';
+                return;
+            }
+            row.style.borderColor = '#e5e7eb';
+
+            const ingredient = inventoryData.ingredients.find(i => i.id === ingredientId);
+            if (ingredient) {
+                items.push({
+                    ingredientId: ingredientId,
+                    name: ingredient.name,
+                    qty: qty,
+                    unit: ingredient.unit,
+                    unitCost: unitCost,
+                    total: qty * unitCost
+                });
+            }
+        });
+
+        if (hasError) { alert('Please fill in all item details correctly.'); return; }
+        if (items.length === 0) { alert('Please add at least one item.'); return; }
+
+        // Revert old stock changes
+        grn.items.forEach(oldItem => {
+            const ingredient = inventoryData.ingredients.find(i => i.id === oldItem.ingredientId);
+            if (ingredient) ingredient.currentStock -= oldItem.qty;
+        });
+
+        // Apply new stock changes
+        items.forEach(newItem => {
+            const ingredient = inventoryData.ingredients.find(i => i.id === newItem.ingredientId);
+            if (ingredient) ingredient.currentStock += newItem.qty;
+        });
+
+        // Update the GRN record
+        const idx = inventoryData.grnHistory.findIndex(g => g.id === id);
+        if (idx !== -1) {
+            inventoryData.grnHistory[idx] = {
+                ...grn,
+                grnNumber: form.grnNumber.value,
+                date: form.date.value,
+                supplier: form.supplier.value,
+                invoiceNumber: form.invoiceNumber.value,
+                items: items,
+                total: items.reduce((sum, i) => sum + i.total, 0),
+                notes: form.notes.value
+            };
+        }
+
+        saveDataToStorage();
+        closeModal('grn-modal');
+
+        // Restore readonly on GRN number for future new GRNs
+        if (grnNumberInput) grnNumberInput.setAttribute('readonly', true);
+        form.onsubmit = saveGRN;
+
+        renderGRN();
+        renderIngredients();
+        refreshDashboard();
+        showNotification('✅ GRN updated successfully!');
+    };
+}
         
         // ==========================================
         // CONSUMPTION FUNCTIONS
