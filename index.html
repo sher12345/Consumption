@@ -1816,7 +1816,7 @@
                 console.log('Ingredients data:', jsonData);
                 
                 result.ingredients = jsonData.map((row, index) => ({
-                    id: Date.now() + index,
+    id: Date.now() + (index * 1000),
                     name: row['Name'] || row['Ingredient'] || row['name'] || '',
                     category: (row['Category'] || row['category'] || 'general').toString().toLowerCase(),
                     unit: (row['Unit'] || row['unit'] || 'pcs').toString().toLowerCase(),
@@ -1984,8 +1984,8 @@
         // ==========================================
         
         function generateId() {
-            return Date.now() + Math.random().toString(36).substr(2, 9);
-        }
+    return Date.now() + Math.floor(Math.random() * 10000);
+}
         
         function formatCurrency(amount) {
             return 'Rs ' + parseFloat(amount).toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -2294,7 +2294,7 @@
             e.preventDefault();
             const form = e.target;
             const newIngredient = {
-                id: generateId(),
+                id: generateId(), // returns string like "1748293847123abc123"
                 name: form.name.value,
                 category: form.category.value,
                 unit: form.unit.value,
@@ -2767,7 +2767,7 @@ window._editingRecipe = false;
                 const select = row.querySelector('select');
                 const inputs = row.querySelectorAll('input');
                 
-                const ingredientId = parseInt(select.value);
+const ingredientId = select.value;
 const supplierInput = row.querySelector('.grn-item-supplier');
 const itemSupplier = supplierInput ? supplierInput.value.trim() : '';
 const inputs_num = row.querySelectorAll('input[type="number"]');
@@ -2782,7 +2782,8 @@ const unitCost = parseFloat(inputs_num[1].value);
                 
                 row.style.borderColor = '#e5e7eb';
                 
-                const ingredient = inventoryData.ingredients.find(i => i.id === ingredientId);
+                const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(ingredientId));
+
                 if (ingredient) {
                     items.push({
     ingredientId: ingredientId,
@@ -3043,77 +3044,90 @@ const unitCost = parseFloat(inputs_num[1].value);
     updateGRNTotals();
 
     form.onsubmit = function(e) {
-        e.preventDefault();
+    e.preventDefault();
 
-        const items = [];
-        let hasError = false;
+    const items = [];
+    let hasError = false;
 
-        document.querySelectorAll('.grn-item-row').forEach((row) => {
-            const select = row.querySelector('select');
-            const ingredientId = parseInt(select.value);
-            const numInputs = row.querySelectorAll('input[type="number"]');
-            const supplierInput = row.querySelector('.grn-item-supplier');
-            const itemSupplier = supplierInput ? supplierInput.value.trim() : '';
-            const qty = parseFloat(numInputs[0].value);
-            const unitCost = parseFloat(numInputs[1].value);
+    document.querySelectorAll('.grn-item-row').forEach((row) => {
+        const select = row.querySelector('select');
+        const ingredientId = select.value; // keep as string
+        const numInputs = row.querySelectorAll('input[type="number"]');
+        const supplierInput = row.querySelector('.grn-item-supplier');
+        const itemSupplier = supplierInput ? supplierInput.value.trim() : '';
+        const qty = parseFloat(numInputs[0].value);
+        const unitCost = parseFloat(numInputs[1].value);
 
-            if (!ingredientId || !qty || unitCost === undefined) {
-                hasError = true;
-                row.style.borderColor = 'var(--danger)';
-                return;
-            }
-            row.style.borderColor = '#e5e7eb';
-
-            const ingredient = inventoryData.ingredients.find(i => i.id === ingredientId);
-            if (ingredient) {
-                items.push({
-                    ingredientId: ingredientId,
-                    name: ingredient.name,
-                    qty: qty,
-                    unit: ingredient.unit,
-                    unitCost: unitCost,
-                    total: qty * unitCost,
-                    itemSupplier: itemSupplier
-                });
-            }
-        });
-
-        if (hasError) { alert('Please fill in all item details correctly.'); return; }
-        if (items.length === 0) { alert('Please add at least one item.'); return; }
-
-        grn.items.forEach(oldItem => {
-            const ingredient = inventoryData.ingredients.find(i => i.id === oldItem.ingredientId);
-            if (ingredient) ingredient.currentStock -= oldItem.qty;
-        });
-
-        items.forEach(newItem => {
-            const ingredient = inventoryData.ingredients.find(i => i.id === newItem.ingredientId);
-            if (ingredient) ingredient.currentStock += newItem.qty;
-        });
-
-        const idx = inventoryData.grnHistory.findIndex(g => g.id === id);
-        if (idx !== -1) {
-            inventoryData.grnHistory[idx] = {
-                ...grn,
-                grnNumber: form.grnNumber.value,
-                date: form.date.value,
-                supplier: form.supplier.value,
-                invoiceNumber: form.invoiceNumber.value,
-                items: items,
-                total: items.reduce((sum, i) => sum + i.total, 0),
-                notes: form.notes.value
-            };
+        if (!ingredientId || isNaN(qty) || !qty || isNaN(unitCost)) {
+            hasError = true;
+            row.style.borderColor = 'var(--danger)';
+            return;
         }
+        row.style.borderColor = '#e5e7eb';
 
-        saveDataToStorage();
-        closeModal('grn-modal');
-        if (grnNumberInput) grnNumberInput.setAttribute('readonly', true);
-        form.onsubmit = saveGRN;
-        renderGRN();
-        renderIngredients();
-        refreshDashboard();
-        showNotification('✅ GRN updated successfully!');
-    };
+        const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(ingredientId));
+        if (ingredient) {
+            items.push({
+                ingredientId: ingredient.id,
+                name: ingredient.name,
+                qty: qty,
+                unit: ingredient.unit,
+                unitCost: unitCost,
+                total: qty * unitCost,
+                itemSupplier: itemSupplier
+            });
+        }
+    });
+
+    if (hasError) { alert('Please fill in all item details correctly.'); return; }
+if (items.length === 0) { 
+    const rows = document.querySelectorAll('.grn-item-row');
+    let debugInfo = `Rows found: ${rows.length}\n`;
+    rows.forEach((row, i) => {
+        const select = row.querySelector('select');
+        const numInputs = row.querySelectorAll('input[type="number"]');
+        const supplierInput = row.querySelector('.grn-item-supplier');
+        debugInfo += `Row ${i}: select="${select?.value}" qty="${numInputs[0]?.value}" cost="${numInputs[1]?.value}" supplier="${supplierInput?.value}"\n`;
+    });
+    alert(debugInfo);
+    return; 
+}
+    // Revert old stock
+    grn.items.forEach(oldItem => {
+        const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(oldItem.ingredientId));
+        if (ingredient) ingredient.currentStock -= oldItem.qty;
+    });
+
+    // Apply new stock
+    items.forEach(newItem => {
+        const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(newItem.ingredientId));
+        if (ingredient) ingredient.currentStock += newItem.qty;
+    });
+
+    const idx = inventoryData.grnHistory.findIndex(g => g.id === id);
+    if (idx !== -1) {
+        inventoryData.grnHistory[idx] = {
+            id: id,
+            grnNumber: form.grnNumber.value,
+            date: form.date.value,
+            supplier: form.supplier.value,
+            invoiceNumber: form.invoiceNumber.value || '',
+            items: items,
+            total: items.reduce((sum, i) => sum + i.total, 0),
+            notes: form.notes.value || '',
+            timestamp: inventoryData.grnHistory[idx].timestamp
+        };
+    }
+
+    saveDataToStorage();
+    closeModal('grn-modal');
+    if (grnNumberInput) grnNumberInput.setAttribute('readonly', true);
+    form.onsubmit = saveGRN;
+    renderGRN();
+    renderIngredients();
+    refreshDashboard();
+    showNotification('✅ GRN updated successfully!');
+};
 }    
         
         // ==========================================
