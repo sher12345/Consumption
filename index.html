@@ -1192,7 +1192,7 @@
                         </div>
                         <div class="form-group">
                             <label class="form-label">Cost Per Unit (Rs)</label>
-                            <input type="number" class="form-input" name="costPerUnit" step="0.01" required placeholder="0.00">
+                            <input type="number" class="form-input" name="costPerUnit" step="0.000001" required placeholder="0.00">
                         </div>
                     </div>
                     <div class="form-row">
@@ -2638,25 +2638,25 @@ window._editingRecipe = false;
         }
         
         function createGRNRowHTML(isFirst = false) {
-            const options = inventoryData.ingredients.map(ing => 
-                `<option value="${ing.id}" data-unit="${ing.unit}">${ing.name} (${ing.unit})</option>`
-            ).join('');
-            
-            return `
-                <div class="grn-item-row" style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: center; background: white; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb;">
-                    <select class="form-select grn-item-select" required onchange="updateGRNRowTotal(this)" style="width: 100%;">
-                        <option value="">Select Ingredient</option>
-                        ${options}
-                    </select>
-                    <input type="number" class="form-input" placeholder="0.00" step="0.01" min="0.01" required onchange="updateGRNRowTotal(this)" style="text-align: right;">
-                    <input type="number" class="form-input" placeholder="0.00" step="0.01" min="0" required onchange="updateGRNRowTotal(this)" style="text-align: right;">
-                    <div class="row-total" style="font-weight: 700; color: var(--dark); text-align: right;">Rs 0.00</div>
-                    <button type="button" class="remove-ingredient" onclick="removeGRNRow(this)" ${isFirst ? 'style="opacity: 0.3;" disabled title="Cannot remove last item"' : ''}>
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
-            `;
-        }
+    const options = inventoryData.ingredients.map(ing => 
+        `<option value="${ing.id}" data-unit="${ing.unit}">${ing.name} (${ing.unit})</option>`
+    ).join('');
+    
+    return `
+        <div class="grn-item-row" style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: center; background: white; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb;">
+            <select class="form-select grn-item-select" required onchange="updateGRNRowTotal(this)" style="width: 100%;">
+                <option value="">Select Ingredient</option>
+                ${options}
+            </select>
+            <input type="number" class="form-input" placeholder="0.00000" step="0.00001" min="0.00001" required onchange="updateGRNRowTotal(this)" style="text-align: right;">
+            <input type="number" class="form-input" placeholder="0.00000" step="0.00001" min="0" required onchange="updateGRNRowTotal(this)" style="text-align: right;">
+            <div class="row-total" style="font-weight: 700; color: var(--dark); text-align: right;">Rs 0.00</div>
+            <button type="button" class="remove-ingredient" onclick="removeGRNRow(this)" ${isFirst ? 'style="opacity: 0.3;" disabled title="Cannot remove last item"' : ''}>
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+    `;
+}
         
         function addGRNRow() {
             const container = document.getElementById('grn-items-container');
@@ -2678,34 +2678,33 @@ window._editingRecipe = false;
         }
         
         function updateGRNRowTotal(element) {
-            const row = element.closest('.grn-item-row');
-            const inputs = row.querySelectorAll('input');
-            const qty = parseFloat(inputs[0].value) || 0;
-            const cost = parseFloat(inputs[1].value) || 0;
-            const total = qty * cost;
-            
-            row.querySelector('.row-total').textContent = 'Rs ' + total.toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            updateGRNTotals();
-        }
+    const row = element.closest('.grn-item-row');
+    const inputs = row.querySelectorAll('input');
+    const qty = parseFloat(inputs[0].value) || 0;
+    const cost = parseFloat(inputs[1].value) || 0;
+    const total = qty * cost;
+    
+    // Show more decimal places for precision
+    row.querySelector('.row-total').textContent = 'Rs ' + total.toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 5});
+    updateGRNTotals();
+}
         
         function updateGRNTotals() {
-            let grandTotal = 0;
-            let itemCount = 0;
-            
-            document.querySelectorAll('.grn-item-row').forEach(row => {
-                const inputs = row.querySelectorAll('input');
-                const qty = parseFloat(inputs[0].value) || 0;
-                const cost = parseFloat(inputs[1].value) || 0;
-                grandTotal += qty * cost;
-                if (qty > 0) itemCount++;
-            });
-            
-            const grandTotalEl = document.getElementById('grn-grand-total');
-            const itemCountEl = document.getElementById('total-items-count');
-            
-            if (grandTotalEl) grandTotalEl.textContent = 'Rs ' + grandTotal.toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-            if (itemCountEl) itemCountEl.textContent = itemCount;
-        }
+    let grandTotal = 0;
+    let itemCount = 0;
+    
+    document.querySelectorAll('.grn-item-row').forEach(row => {
+        const inputs = row.querySelectorAll('input');
+        const qty = parseFloat(inputs[0].value) || 0;
+        const cost = parseFloat(inputs[1].value) || 0;
+        grandTotal += qty * cost;
+        if (qty > 0) itemCount++;
+    });
+    
+    // Allow up to 5 decimal places for display
+    document.getElementById('grn-grand-total').textContent = 'Rs ' + grandTotal.toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 5});
+    document.getElementById('total-items-count').textContent = itemCount;
+}
         
         function saveGRN(e) {
             e.preventDefault();
