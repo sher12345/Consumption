@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1994,8 +1995,7 @@
             modal.classList.add('active');
             
             if (modalId === 'grn-modal') resetGRNForm();
-            if (modalId === 'add-recipe-modal') populateRecipeIngredientSelects();
-            if (modalId === 'closing-modal') {
+            if (modalId === 'add-recipe-modal' && !window._editingRecipe) populateRecipeIngredientSelects();            if (modalId === 'closing-modal') {
                 document.querySelector('#closing-form input[name="date"]').valueAsDate = new Date();
                 generateClosingTable();
             }
@@ -2009,8 +2009,7 @@
             if (!modal) return;
             modal.classList.remove('active');
             
-            if (modalId === 'add-recipe-modal') resetRecipeForm();
-            if (modalId === 'upload-data-modal') {
+            if (modalId === 'add-recipe-modal') { resetRecipeForm(); window._editingRecipe = false; }            if (modalId === 'upload-data-modal') {
                 // Reset upload modal
                 document.getElementById('upload-progress').style.display = 'none';
                 document.getElementById('upload-preview').style.display = 'none';
@@ -2381,7 +2380,7 @@
                 if (selects[0].value && inputs[0].value) {
                     const ingredient = inventoryData.ingredients.find(i => i.id === parseInt(selects[0].value));
                     ingredients.push({
-                        ingredientId: parseInt(selects[0].value),
+                        ingredientId: selects[0].value,
                         name: ingredient ? ingredient.name : '',
                         qty: parseFloat(inputs[0].value) || 0,
                         unit: selects[1].value
@@ -2506,8 +2505,8 @@
                     <select class="form-select ingredient-select" required>
                         <option value="">Select Ingredient</option>
                         ${inventoryData.ingredients.map(i => 
-                            `<option value="${i.id}" ${i.id === ing.ingredientId ? 'selected' : ''}>${i.name} (${i.unit})</option>`
-                        ).join('')}
+    `<option value="${i.id}" ${String(i.id) === String(ing.ingredientId) ? 'selected' : ''}>${i.name} (${i.unit})</option>`
+).join('')}
                     </select>
                     <input type="number" class="form-input" placeholder="Qty" step="0.01" value="${ing.qty}" required>
                     <select class="form-select unit-select" style="width: 100px;">
@@ -2530,7 +2529,9 @@
                 updateRecipe(e, recipe.id);
             };
             
-            openModal('add-recipe-modal');
+            window._editingRecipe = true;
+openModal('add-recipe-modal');
+window._editingRecipe = false;
         }
         
         function updateRecipe(e, id) {
@@ -2544,7 +2545,7 @@
                 if (selects[0].value && inputs[0].value) {
                     const ingredient = inventoryData.ingredients.find(i => i.id === parseInt(selects[0].value));
                     ingredients.push({
-                        ingredientId: parseInt(selects[0].value),
+                        ingredientId: selects[0].value,
                         name: ingredient ? ingredient.name : '',
                         qty: parseFloat(inputs[0].value) || 0,
                         unit: selects[1].value
@@ -2876,8 +2877,7 @@
             
             // Check stock for all ingredients
             recipe.ingredients.forEach(ing => {
-                const ingredient = inventoryData.ingredients.find(i => i.id === ing.ingredientId);
-                if (ingredient && ingredient.currentStock < ing.qty) {
+const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(ing.ingredientId));                if (ingredient && ingredient.currentStock < ing.qty) {
                     insufficient.push(ingredient.name);
                 }
             });
