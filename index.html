@@ -1582,28 +1582,49 @@
         }
         
         async function loadDataFromStorage() {
-            try {
-                const data = await ovenDB.load(STORAGE_KEY);
-                if (data) {
-                    inventoryData = data;
-                    return true;
-                }
-            } catch (err) {
-                console.error('IndexedDB load failed:', err);
+    try {
+        const data = await ovenDB.load(STORAGE_KEY);
+        if (data) {
+            // CRITICAL FIX: Ensure all numeric fields are actually numbers, not strings
+            inventoryData = data;
+            
+            // Fix any string numbers that might have been stored
+            if (inventoryData.ingredients) {
+                inventoryData.ingredients.forEach(ing => {
+                    ing.currentStock = Number(ing.currentStock) || 0;
+                    ing.openingStock = ing.openingStock !== undefined ? Number(ing.openingStock) : undefined;
+                    ing.minLevel = Number(ing.minLevel) || 0;
+                    ing.costPerUnit = Number(ing.costPerUnit) || 0;
+                });
             }
             
-            // Fallback to localStorage
-            const legacy = localStorage.getItem(STORAGE_KEY);
-            if (legacy) {
-                try {
-                    inventoryData = JSON.parse(legacy);
-                    await ovenDB.save(STORAGE_KEY, inventoryData);
-                    return true;
-                } catch (e) {}
-            }
-            
-            return false;
+            return true;
         }
+    } catch (err) {
+        console.error('IndexedDB load failed:', err);
+    }
+    
+    // Fallback to localStorage
+    const legacy = localStorage.getItem(STORAGE_KEY);
+    if (legacy) {
+        try {
+            inventoryData = JSON.parse(legacy);
+            
+            // Apply same number conversion fix
+            if (inventoryData.ingredients) {
+                inventoryData.ingredients.forEach(ing => {
+                    ing.currentStock = Number(ing.currentStock) || 0;
+                    ing.openingStock = ing.openingStock !== undefined ? Number(ing.openingStock) : undefined;
+                });
+            }
+            
+            await ovenDB.save(STORAGE_KEY, inventoryData);
+            return true;
+        } catch (e) {}
+    }
+    
+    return false;
+}
         
         function showNotification(message, type = 'success') {
             const indicator = document.getElementById('offline-status');
@@ -2692,22 +2713,23 @@
         let editingGRNId = null;
         
         function setupGRNDateConstraints() {
-            const dateInput = document.getElementById('grn-date-input');
-            if (!dateInput) return;
-            
-            // Set max date to today
-            const today = new Date().toISOString().split('T')[0];
-            dateInput.setAttribute('max', today);
-            
-            // Set min date to 1 month ago
-            const oneMonthAgo = new Date();
-            oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-            const minDate = oneMonthAgo.toISOString().split('T')[0];
-            dateInput.setAttribute('min', minDate);
-            
-            // Set default value to today
-            dateInput.value = today;
-        }
+    const dateInput = document.getElementById('grn-date-input');
+    if (!dateInput) return;
+    
+    // REMOVED: Don't block future dates
+    // const today = new Date().toISOString().split('T')[0];
+    // dateInput.setAttribute('max', today);  ← DELETE THIS LINE
+    
+    // Keep only min date (1 month back)
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+    const minDate = oneMonthAgo.toISOString().split('T')[0];
+    dateInput.setAttribute('min', minDate);
+    
+    // Default to today
+    const today = new Date().toISOString().split('T')[0];
+    dateInput.value = today;
+}
         
         function validateGRNDate(dateString) {
             if (!dateString) return false;
@@ -2804,22 +2826,19 @@
         }
         
         function addGRNRow() {
-            const container = document.getElementById('grn-items-container');
-            const rowCount = container.querySelectorAll('.grn-item-row').length;
-            
-            // Create new row
-            const div = document.createElement('div');
-            div.className = 'grn-item-row';
-            div.innerHTML = createGRNRowHTML(rowCount === 0);
-            
-            container.appendChild(div);
-            
-            // Populate ingredient dropdown for the new row
-            populateGRNIngredientSelects();
-            
-            // Update totals
-            updateGRNTotals();
-        }
+    const container = document.getElementById('grn-items-container');
+    
+    // Clear any existing event listeners by cloning container (nuclear option)
+    // Or just ensure you're not adding duplicate listeners
+    
+    const div = document.createElement('div');
+    div.innerHTML = createGRNRowHTML(false);
+    const row = div.firstElementChild;
+    
+    container.appendChild(row);
+    populateGRNIngredientSelects();
+    updateGRNTotals();
+}
         
         function removeGRNRow(button) {
             const row = button.closest('.grn-item-row');
@@ -2864,103 +2883,109 @@
         }
         
         function saveGRN(e) {
-            e.preventDefault();
-            const form = e.target;
-            
-            // Validate date
-            const dateValue = form.date.value;
-            if (!validateGRNDate(dateValue)) {
-                return;
-            }
-            
-            // Collect all items
-            const items = [];
-            let hasError = false;
-            
-            document.querySelectorAll('.grn-item-row').forEach(row => {
-                const select = row.querySelector('.grn-item-select');
-                const qtyInput = row.querySelector('.grn-qty');
-                const costInput = row.querySelector('.grn-cost');
-                const supplierInput = row.querySelector('.grn-item-supplier');
-                
-                const ingredientId = select.value;
-                const qty = parseFloat(qtyInput.value) || 0;
-                const unitCost = parseFloat(costInput.value) || 0;
-                const itemSupplier = supplierInput?.value?.trim() || form.supplier.value || 'Main Supplier';
+    e.preventDefault();
+    const form = e.target;
+    
+    // Check HTML5 validation first
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+    
+    // Validate date
+    const dateValue = form.date.value;
+    if (!validateGRNDate(dateValue)) {
+        return;
+    }
+    
+    // Collect all items - FIXED: Create NEW object for each row
+    const items = [];
+    let hasError = false;
+    
+    document.querySelectorAll('.grn-item-row').forEach((row, index) => {
+        const select = row.querySelector('.grn-item-select');
+        const qtyInput = row.querySelector('.grn-qty');
+        const costInput = row.querySelector('.grn-cost');
+        const supplierInput = row.querySelector('.grn-item-supplier');
+        
+        const ingredientId = select.value;
+        const qty = parseFloat(qtyInput.value) || 0;
+        const unitCost = parseFloat(costInput.value) || 0;
+        const itemSupplier = supplierInput?.value?.trim() || form.supplier.value || 'Main Supplier';
 
-                // Validate
-                if (!ingredientId || qty <= 0 || unitCost <= 0) {
-                    row.style.borderColor = 'var(--danger)';
-                    hasError = true;
-                    return;
-                }
-                
-                row.style.borderColor = '#e5e7eb';
-
-                const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(ingredientId));
-                if (!ingredient) {
-                    alert(`Ingredient not found: ${ingredientId}`);
-                    hasError = true;
-                    return;
-                }
-
-                items.push({
-                    ingredientId: ingredient.id,
-                    name: ingredient.name,
-                    qty: qty,
-                    unit: ingredient.unit,
-                    unitCost: unitCost,
-                    total: qty * unitCost,
-                    itemSupplier: itemSupplier
-                });
-            });
-
-            if (hasError) {
-                alert('Please fill all required fields correctly for each item');
-                return;
-            }
-
-            if (items.length === 0) {
-                alert('Please add at least one item');
-                return;
-            }
-
-            // Update stock for all items
-            items.forEach(item => {
-                const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(item.ingredientId));
-                if (ingredient) {
-                    ingredient.currentStock += item.qty;
-                }
-            });
-
-            // Create GRN
-            const grn = {
-                id: generateId(),
-                grnNumber: form.grnNumber.value || 
-                           ('GRN-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + 
-                            Math.floor(Math.random()*1000)),
-                date: form.date.value || new Date().toISOString().slice(0,10),
-                supplier: form.supplier.value || 'Default Supplier',
-                invoiceNumber: form.invoiceNumber.value || '',
-                items: items,
-                total: items.reduce((sum, item) => sum + item.total, 0),
-                notes: form.notes.value || '',
-                timestamp: new Date().toISOString()
-            };
-
-            // Save
-            inventoryData.grnHistory.unshift(grn);
-            saveDataToStorage();
-
-            // Close and refresh
-            closeModal('grn-modal');
-            renderIngredients();
-            renderGRN();
-            refreshDashboard();
-
-            // Success message
-            alert(`✅ GRN ${grn.grnNumber} saved!\nAdded ${items.length} item(s)\nTotal: ${formatCurrency(grn.total)}`);
+        // Validate
+        if (!ingredientId || qty <= 0 || unitCost <= 0) {
+            row.style.borderColor = 'var(--danger)';
+            hasError = true;
+            return;
         }
+        
+        row.style.borderColor = '#e5e7eb';
+
+        const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(ingredientId));
+        if (!ingredient) {
+            alert(`Ingredient not found: ${ingredientId}`);
+            hasError = true;
+            return;
+        }
+
+        // ✅ FIXED: Create a NEW object for each item (not reused reference)
+        const newItem = {
+            ingredientId: ingredient.id,
+            name: ingredient.name,
+            qty: qty,
+            unit: ingredient.unit,
+            unitCost: unitCost,
+            total: qty * unitCost,
+            itemSupplier: itemSupplier
+        };
+        
+        items.push(newItem); // Push the new object
+    });
+
+    if (hasError) {
+        alert('Please fill all required fields correctly for each item');
+        return;
+    }
+
+    if (items.length === 0) {
+        alert('Please add at least one item');
+        return;
+    }
+
+    // Update stock for all items
+    items.forEach(item => {
+        const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(item.ingredientId));
+        if (ingredient) {
+            ingredient.currentStock += item.qty;
+        }
+    });
+
+    // Create GRN
+    const grn = {
+        id: generateId(),
+        grnNumber: form.grnNumber.value || ('GRN-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(Math.random()*1000)),
+        date: form.date.value || new Date().toISOString().slice(0,10),
+        supplier: form.supplier.value || 'Default Supplier',
+        invoiceNumber: form.invoiceNumber.value || '',
+        items: items, // Now contains unique objects
+        total: items.reduce((sum, item) => sum + item.total, 0),
+        notes: form.notes.value || '',
+        timestamp: new Date().toISOString()
+    };
+
+    // Save
+    inventoryData.grnHistory.unshift(grn);
+    saveDataToStorage();
+
+    // Close and refresh
+    closeModal('grn-modal');
+    renderIngredients();
+    renderGRN();
+    refreshDashboard();
+
+    alert(`✅ GRN ${grn.grnNumber} saved!\nAdded ${items.length} item(s)\nTotal: ${formatCurrency(grn.total)}`);
+}
         
         function renderGRN() {
             const container = document.getElementById('grn-container');
@@ -3425,63 +3450,109 @@
         }
         
         function renderConsumptionLive() {
-            const container = document.getElementById('consumption-feed');
-            if (!container) return;
-            
-            if (inventoryData.consumptionLog.length === 0) {
-                container.innerHTML = `<div style="text-align: center; padding: 40px; color: var(--gray);"><i class="fas fa-utensils" style="font-size: 48px;"></i><h3>No Consumption Yet</h3></div>`;
-                return;
-            }
-            
-            container.innerHTML = inventoryData.consumptionLog.slice(0, 20).map(log => `
-                <div style="background: white; border: 2px solid #e5e7eb; border-radius: 15px; padding: 20px; margin-bottom: 15px;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 15px; border-bottom: 1px solid #f3f4f6; padding-bottom: 15px;">
-                        <span style="font-weight: 900;">${log.recipeName}</span>
-                        <span style="color: var(--gray); font-size: 13px;">${new Date(log.timestamp).toLocaleString()}</span>
+    const container = document.getElementById('consumption-feed');
+    if (!container) return;
+    
+    if (inventoryData.consumptionLog.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 60px; color: var(--gray);">
+                <i class="fas fa-clipboard-check" style="font-size: 64px; margin-bottom: 20px;"></i>
+                <h3>No Consumption Data Yet</h3>
+                <p>Complete a <strong>Night Closing</strong> to see daily consumption.</p>
+                <p style="font-size: 13px; margin-top: 15px; color: var(--primary);">
+                    Formula: Opening + GRN - Closing = Consumption
+                </p>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = inventoryData.consumptionLog.slice(0, 50).map(log => {
+        // Style based on type
+        const isAuto = log.type === 'auto';
+        const icon = isAuto ? 'fa-moon' : 'fa-utensils';
+        const color = isAuto ? 'var(--primary)' : 'var(--success)';
+        const label = isAuto ? 'DAILY CLOSING' : 'RECIPE SALE';
+        
+        return `
+            <div style="background: white; border: 2px solid ${isAuto ? '#f37021' : '#e5e7eb'}; border-radius: 15px; padding: 20px; margin-bottom: 15px; position: relative;">
+                <div style="position: absolute; top: -10px; right: 15px; background: ${color}; color: white; padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 800;">
+                    ${label}
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; margin-bottom: 15px; border-bottom: 1px solid #f3f4f6; padding-bottom: 15px;">
+                    <div>
+                        <span style="font-weight: 900; font-size: 16px;">${log.recipeName}</span>
+                        ${log.reason && log.reason !== 'daily_closing' ? `<div style="font-size: 12px; color: var(--gray); margin-top: 4px;">Reason: ${log.reason}</div>` : ''}
                     </div>
-                    <div style="display: flex; flex-direction: column; gap: 10px;">
-                        ${log.ingredients.map(ing => `
-                            <div style="display: flex; justify-content: space-between; padding: 10px; background: #f8fafc; border-radius: 10px;">
-                                <span>${ing.name}</span>
-                                <span style="font-weight: 700;">-${ing.qty} ${ing.unit} (${formatCurrency(ing.cost)})</span>
-                            </div>
-                        `).join('')}
+                    <div style="text-align: right;">
+                        <div style="color: var(--gray); font-size: 13px;">${new Date(log.timestamp).toLocaleString()}</div>
+                        <div style="font-weight: 900; color: var(--dark); font-size: 18px; margin-top: 5px;">
+                            ${formatCurrency(log.totalCost || log.ingredients.reduce((sum, i) => sum + (i.cost || 0), 0))}
+                        </div>
                     </div>
                 </div>
-            `).join('');
-        }
+                
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    ${log.ingredients.map(ing => `
+                        <div style="display: flex; justify-content: space-between; padding: 10px 12px; background: #f8fafc; border-radius: 8px; align-items: center;">
+                            <span style="font-weight: 600;">${ing.name}</span>
+                            <div style="text-align: right;">
+                                <span style="font-weight: 900; color: var(--danger);">-${ing.qty.toFixed(3)} ${ing.unit}</span>
+                                <span style="font-size: 12px; color: var(--gray); margin-left: 10px;">(${formatCurrency(ing.cost || (ing.qty * (ing.costPerUnit || 0)))})</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
         
         function renderConsumptionByItem() {
-            const tbody = document.getElementById('consumption-by-item-body');
-            if (!tbody) return;
+    const tbody = document.getElementById('consumption-by-item-body');
+    if (!tbody) return;
+    
+    // Aggregate all consumption (both auto from closing and manual sales)
+    const itemMap = {};
+    
+    inventoryData.consumptionLog.forEach(log => {
+        log.ingredients.forEach(ing => {
+            if (!itemMap[ing.ingredientId]) {
+                itemMap[ing.ingredientId] = {
+                    name: ing.name,
+                    unit: ing.unit,
+                    totalQty: 0,
+                    totalCost: 0,
+                    lastUsed: log.timestamp,
+                    count: 0
+                };
+            }
+            itemMap[ing.ingredientId].totalQty += ing.qty;
+            itemMap[ing.ingredientId].totalCost += ing.cost || 0;
+            itemMap[ing.ingredientId].count++;
             
-            const itemMap = {};
-            inventoryData.consumptionLog.forEach(log => {
-                log.ingredients.forEach(ing => {
-                    if (!itemMap[ing.ingredientId]) {
-                        itemMap[ing.ingredientId] = {
-                            name: ing.name,
-                            unit: ing.unit,
-                            totalQty: 0,
-                            totalCost: 0,
-                            lastUsed: log.timestamp
-                        };
-                    }
-                    itemMap[ing.ingredientId].totalQty += ing.qty;
-                    itemMap[ing.ingredientId].totalCost += ing.cost;
-                });
-            });
-            
-            tbody.innerHTML = Object.values(itemMap).map(item => `
-                <tr>
-                    <td>${item.name}</td>
-                    <td>${item.totalQty.toFixed(2)}</td>
-                    <td>${item.unit}</td>
-                    <td>${formatCurrency(item.totalCost)}</td>
-                    <td>${new Date(item.lastUsed).toLocaleDateString()}</td>
-                </tr>
-            `).join('');
-        }
+            if (new Date(log.timestamp) > new Date(itemMap[ing.ingredientId].lastUsed)) {
+                itemMap[ing.ingredientId].lastUsed = log.timestamp;
+            }
+        });
+    });
+    
+    if (Object.keys(itemMap).length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:40px;">No consumption data. Complete night closing first.</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = Object.values(itemMap).map(item => `
+        <tr>
+            <td style="font-weight: 700;">${item.name}</td>
+            <td style="font-weight: 900; color: var(--danger);">${item.totalQty.toFixed(3)}</td>
+            <td><span class="unit-badge">${item.unit}</span></td>
+            <td class="cost-display">${formatCurrency(item.totalCost)}</td>
+            <td style="font-size: 13px; color: var(--gray);">${new Date(item.lastUsed).toLocaleDateString()}</td>
+        </tr>
+    `).join('');
+}
         
         function renderConsumptionByRecipe() {
             const tbody = document.getElementById('consumption-by-recipe-body');
@@ -3535,108 +3606,189 @@
         // UPDATED NIGHT CLOSING LOGIC
         // ==========================================
         function generateClosingTable() {
-            const tbody = document.getElementById('closing-table-body');
-            if (!tbody) return;
+    const tbody = document.getElementById('closing-table-body');
+    if (!tbody) return;
 
-            const today = new Date().toISOString().slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
 
-            tbody.innerHTML = inventoryData.ingredients.map(ing => {
-                const opening = (ing.openingStock !== undefined && ing.openingStock !== null)
-                    ? ing.openingStock
-                    : ing.currentStock;
-
-                const grnToday = getGRNForDate(ing.id, today);
-                const available = opening + grnToday;
-
-                return `
-                    <tr>
-                        <td style="font-weight:700;">${ing.name}</td>
-                        <td style="color:#1e40af;font-weight:700;">${opening.toFixed(2)}</td>
-                        <td style="color:#10b981;font-weight:700;">+${grnToday.toFixed(2)}</td>
-                        <td style="font-weight:800;">${available.toFixed(2)}</td>
-                        <td>
-                            <input type="number"
-                                   class="form-input"
-                                   name="physical_${ing.id}"
-                                   step="0.0001"
-                                   min="0"
-                                   style="width:130px;text-align:right;"
-                                   placeholder="${available.toFixed(2)}"> 
-                            <small style="color:#6b7280;font-size:11px;display:block;margin-top:4px;">
-                                Empty = No Variance
-                            </small>
-                        </td>
-                        <td><span class="unit-badge">${ing.unit}</span></td>
-                    </tr>
-                `;
-            }).join('');
+    tbody.innerHTML = inventoryData.ingredients.map(ing => {
+        // CRITICAL FIX: Ensure proper number conversion
+        let opening = 0;
+        
+        if (ing.openingStock !== undefined && ing.openingStock !== null) {
+            opening = Number(ing.openingStock);
+        } else {
+            opening = Number(ing.currentStock) || 0;
         }
+        
+        // Validate it's a real number
+        if (isNaN(opening)) opening = 0;
+
+        const grnToday = getGRNForDate(ing.id, today);
+        const available = opening + grnToday;
+        
+        // DEBUG for Peri Peri
+        if (ing.name.includes('Peri')) {
+            console.log(`Night Closing ${ing.name}:`, {
+                openingStock: ing.openingStock,
+                parsedOpening: opening,
+                grnToday: grnToday,
+                available: available,
+                unit: ing.unit
+            });
+        }
+
+        return `
+            <tr data-ingredient-id="${ing.id}">
+                <td style="font-weight:700;">${ing.name}</td>
+                <td style="color:#1e40af;font-weight:700;">${opening.toFixed(3)}</td>
+                <td style="color:#10b981;font-weight:700;">+${grnToday.toFixed(3)}</td>
+                <td style="font-weight:800;">${available.toFixed(3)}</td>
+                <td>
+                    <input type="number"
+                           class="form-input physical-input"
+                           name="physical_${ing.id}"
+                           step="0.001"
+                           min="0"
+                           max="${available}"
+                           style="width:130px;text-align:right;"
+                           placeholder="${available.toFixed(3)}">
+                    <small style="color:#6b7280;font-size:11px;display:block;margin-top:4px;">
+                        Max: ${available.toFixed(3)}
+                    </small>
+                </td>
+                <td><span class="unit-badge">${ing.unit}</span></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// Add validation function
+function validatePhysicalInput(input, maxAvailable) {
+    const val = parseFloat(input.value);
+    if (isNaN(val) || val < 0) {
+        input.value = '';
+        return;
+    }
+    if (val > maxAvailable) {
+        alert(`Physical count cannot exceed available stock (${maxAvailable.toFixed(3)})`);
+        input.value = maxAvailable.toFixed(3);
+    }
+}
 
         function saveClosing(e) {
-            e.preventDefault();
-            const form = e.target;
-            const closingDate = form.date.value;
-            const closingItems = [];
-            let totalConsumptionCost = 0;
+    e.preventDefault();
+    const form = e.target;
+    const closingDate = form.date.value;
+    const closingItems = [];
+    let totalConsumptionCost = 0;
+    const consumptionEntries = [];
 
-            inventoryData.ingredients.forEach(ing => {
-                const opening = (ing.openingStock !== undefined && ing.openingStock !== null)
-                    ? ing.openingStock : ing.currentStock;
-                const grnToday = getGRNForDate(ing.id, closingDate);
-                const available = opening + grnToday;
-
-                // Get value from form
-                const physicalInput = form[`physical_${ing.id}`];
-                let physical;
-
-                // If field is empty, assume physical count matches expected available stock
-                if (!physicalInput || physicalInput.value === "") {
-                    physical = available;
-                } else {
-                    physical = parseFloat(physicalInput.value);
-                }
-
-                const consumed = available - physical;
-                const consumptionCost = consumed * ing.costPerUnit;
-
-                closingItems.push({
-                    ingredientId: ing.id,
-                    name: ing.name,
-                    unit: ing.unit,
-                    opening: opening,
-                    grnToday: grnToday,
-                    available: available,
-                    physical: physical,
-                    consumed: consumed,
-                    consumptionCost: consumptionCost,
-                    costPerUnit: ing.costPerUnit
-                });
-
-                totalConsumptionCost += Math.max(0, consumptionCost);
-
-                // Carry forward: set this count as tomorrow's opening
-                ing.currentStock = physical;
-                ing.openingStock = physical;
-                ing.openingStockDate = closingDate;
-            });
-
-            const closing = {
-                id: generateId(),
-                date: closingDate,
-                closedBy: form.closedBy.value,
-                items: closingItems,
-                totalConsumptionCost: totalConsumptionCost,
-                timestamp: new Date().toISOString()
-            };
-
-            inventoryData.closingHistory.unshift(closing);
-            saveDataToStorage();
-            closeModal('closing-modal');
-            renderIngredients();
-            refreshDashboard();
-            loadClosingData();
-            showNotification('🌙 Night Closing Complete');
+    inventoryData.ingredients.forEach(ing => {
+        // FIX: Properly parse opening stock with 3 decimal precision
+        let opening = 0;
+        if (ing.openingStock !== undefined && ing.openingStock !== null && !isNaN(ing.openingStock)) {
+            opening = parseFloat(parseFloat(ing.openingStock).toFixed(3)); // Force 3 decimal precision
+        } else {
+            opening = parseFloat(parseFloat(ing.currentStock || 0).toFixed(3));
         }
+
+        // Get today's GRN
+        const grnToday = getGRNForDate(ing.id, closingDate);
+        
+        // Calculate available
+        const available = parseFloat((opening + grnToday).toFixed(3));
+
+        // Get physical count from form
+        const physicalInput = form[`physical_${ing.id}`];
+        let physical = available; // Default to no variance
+
+        if (physicalInput && physicalInput.value !== "" && physicalInput.value !== null) {
+            physical = parseFloat(parseFloat(physicalInput.value).toFixed(3));
+        }
+
+        // FIX: Ensure physical doesn't exceed available (data integrity)
+        if (physical > available) {
+            physical = available;
+        }
+
+        // Calculate consumed with proper precision
+        const consumed = parseFloat((available - physical).toFixed(3));
+        const consumptionCost = parseFloat((consumed * ing.costPerUnit).toFixed(2));
+
+        closingItems.push({
+            ingredientId: ing.id,
+            name: ing.name,
+            unit: ing.unit,
+            opening: opening,
+            grnToday: grnToday,
+            available: available,
+            physical: physical,
+            consumed: consumed,
+            consumptionCost: consumptionCost,
+            costPerUnit: ing.costPerUnit
+        });
+
+        totalConsumptionCost += consumptionCost;
+
+        // Create consumption entry if there was usage
+        if (consumed > 0.001) { // Threshold to avoid floating point noise
+            consumptionEntries.push({
+                ingredientId: ing.id,
+                name: ing.name,
+                qty: consumed,
+                unit: ing.unit,
+                cost: consumptionCost,
+                reason: 'Daily Usage'
+            });
+        }
+
+        // Carry forward: set closing as tomorrow's opening
+        ing.currentStock = physical;
+        ing.openingStock = physical; // This becomes tomorrow's opening
+        ing.openingStockDate = closingDate;
+    });
+
+    // Save closing record
+    const closing = {
+        id: generateId(),
+        date: closingDate,
+        closedBy: form.closedBy.value,
+        items: closingItems,
+        totalConsumptionCost: totalConsumptionCost,
+        timestamp: new Date().toISOString()
+    };
+
+    inventoryData.closingHistory.unshift(closing);
+
+    // Auto-create consumption log entry
+    if (consumptionEntries.length > 0) {
+        const consumptionLogEntry = {
+            id: generateId(),
+            timestamp: new Date(closingDate + 'T' + new Date().toTimeString().slice(0,8)).toISOString(),
+            type: 'auto',
+            reason: 'daily_closing',
+            recipeName: `Daily Consumption - ${formatDate(closingDate)}`,
+            ingredients: consumptionEntries,
+            totalCost: totalConsumptionCost,
+            closingId: closing.id
+        };
+        
+        inventoryData.consumptionLog.unshift(consumptionLogEntry);
+    }
+
+    saveDataToStorage();
+    closeModal('closing-modal');
+    renderIngredients();
+    refreshDashboard();
+    loadClosingData();
+    
+    if (document.getElementById('consumption').classList.contains('active')) {
+        renderConsumption();
+    }
+    
+    showNotification(`🌙 Night Closing Complete! Consumption: ${formatCurrency(totalConsumptionCost)}`);
+}
         
         
         function loadClosingData() {
@@ -3799,21 +3951,51 @@
 
         // Populate opening stock modal table
         function populateOpeningStockTable() {
-            const tbody = document.getElementById('opening-stock-table-body');
-            if (!tbody) return;
-            tbody.innerHTML = inventoryData.ingredients.map(ing => `
-                <tr>
-                    <td style="padding:12px 15px;font-weight:700;">${ing.name}</td>
-                    <td style="padding:12px 15px;color:#6b7280;">${(ing.currentStock||0).toFixed(2)}</td>
-                    <td style="padding:12px 15px;">
-                        <input type="number" class="form-input" id="opening_${ing.id}" step="0.001"
-                            value="${ing.openingStock !== undefined && ing.openingStock !== null ? ing.openingStock : (ing.currentStock||0).toFixed(3)}"
-                            style="width:130px;text-align:right;">
-                    </td>
-                    <td style="padding:12px 15px;"><span class="unit-badge">${ing.unit}</span></td>
-                </tr>
-            `).join('');
+    const tbody = document.getElementById('opening-stock-table-body');
+    if (!tbody) return;
+    
+    tbody.innerHTML = inventoryData.ingredients.map(ing => {
+        // CRITICAL FIX: Ensure we're working with numbers, not strings
+        const currentStock = Number(ing.currentStock) || 0;
+        
+        // Get opening stock - ensure it's a number
+        let openingStockValue = 0;
+        if (ing.openingStock !== undefined && ing.openingStock !== null) {
+            openingStockValue = Number(ing.openingStock);
+        } else {
+            openingStockValue = currentStock;
         }
+        
+        // DEBUG: Log any suspicious values
+        if (ing.name.includes('Peri')) {
+            console.log(`Populating ${ing.name}:`, {
+                rawOpening: ing.openingStock,
+                parsedOpening: openingStockValue,
+                currentStock: currentStock,
+                unit: ing.unit
+            });
+        }
+        
+        // FIX: Don't use toFixed() for input values - let the number input handle it
+        // Only use toFixed for display text, not for input value attribute
+        return `
+            <tr data-ingredient-id="${ing.id}">
+                <td style="padding:12px 15px;font-weight:700;">${ing.name}</td>
+                <td style="padding:12px 15px;color:#6b7280;">${currentStock.toFixed(3)}</td>
+                <td style="padding:12px 15px;">
+                    <input type="number" 
+                           class="form-input opening-stock-input" 
+                           id="opening_${ing.id}" 
+                           step="0.001"
+                           min="0"
+                           value="${openingStockValue}"
+                           style="width:130px;text-align:right;">
+                </td>
+                <td style="padding:12px 15px;"><span class="unit-badge">${ing.unit}</span></td>
+            </tr>
+        `;
+    }).join('');
+}
 
         // Filter opening stock table by search
         function filterOpeningTable() {
@@ -3826,24 +4008,40 @@
 
         // Save opening stock
         function saveOpeningStock() {
-            const date = document.getElementById('opening-stock-date').value || new Date().toISOString().slice(0,10);
-            inventoryData.ingredients.forEach(ing => {
-                const input = document.getElementById(`opening_${ing.id}`);
-                if (input) {
-                    const val = parseFloat(input.value);
-                    if (!isNaN(val)) {
-                        ing.openingStock = val;
-                        ing.openingStockDate = date;
-                        ing.currentStock = val; // sync current stock too
-                    }
+    const date = document.getElementById('opening-stock-date').value || new Date().toISOString().slice(0,10);
+    
+    inventoryData.ingredients.forEach(ing => {
+        const input = document.getElementById(`opening_${ing.id}`);
+        if (input) {
+            // CRITICAL FIX: Parse as number, don't use toFixed() here
+            const rawValue = input.value;
+            const val = Number(rawValue);
+            
+            if (!isNaN(val) && val >= 0) {
+                // Store as pure number
+                ing.openingStock = val;
+                ing.openingStockDate = date;
+                // Sync current stock to opening
+                ing.currentStock = val;
+                
+                // DEBUG
+                if (ing.name.includes('Peri')) {
+                    console.log(`Saved ${ing.name}:`, {
+                        inputValue: rawValue,
+                        savedValue: val,
+                        unit: ing.unit
+                    });
                 }
-            });
-            saveDataToStorage();
-            closeModal('opening-stock-modal');
-            renderIngredients();
-            refreshDashboard();
-            showNotification('✅ Opening stock saved!');
+            }
         }
+    });
+    
+    saveDataToStorage();
+    closeModal('opening-stock-modal');
+    renderIngredients();
+    refreshDashboard();
+    showNotification('✅ Opening stock saved!');
+}
         
         function updateDateFilterHint() {
             const input = document.getElementById('grn-date-filter');
