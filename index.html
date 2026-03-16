@@ -962,8 +962,15 @@
                     </div>
                     
                     <div class="filters">
-                        <input type="date" class="form-input" id="grn-date-filter" onchange="filterGRN()">
-                        <input type="text" class="form-input" id="grn-supplier-filter" placeholder="Filter by supplier..." onkeyup="filterGRN()">
+<div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+    <div>
+        <label style="font-size: 13px; color: #6b7280; margin-bottom: 4px; display: block;">Filter by Date</label>
+        <input type="date" class="form-input" id="grn-date-filter" onchange="filterGRN()">
+    </div>
+    <small id="date-filter-hint" style="color: #6b7280; font-size: 12px; display: none;">
+        <i class="fas fa-info-circle"></i> Clear date to see all GRNs
+    </small>
+</div>                        <input type="text" class="form-input" id="grn-supplier-filter" placeholder="Filter by supplier..." onkeyup="filterGRN()">
                     </div>
 
                     <div id="grn-container">
@@ -2053,11 +2060,15 @@
         // ==========================================
         
         function openModal(modalId) {
-            const modal = document.getElementById(modalId);
-            if (!modal) return;
-            modal.classList.add('active');
-            
-            if (modalId === 'grn-modal') resetGRNForm();
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+    modal.classList.add('active');
+    
+    if (modalId === 'grn-modal') {
+        resetGRNForm();
+        // ✅ Ensure ingredient dropdowns are populated
+        populateGRNIngredientSelects();
+    }
             if (modalId === 'add-recipe-modal' && !window._editingRecipe) populateRecipeIngredientSelects();            if (modalId === 'closing-modal') {
                 document.querySelector('#closing-form input[name="date"]').valueAsDate = new Date();
                 generateClosingTable();
@@ -2438,8 +2449,7 @@ inventoryData.ingredients = inventoryData.ingredients.filter(i => String(i.id) !
                 const selects = row.querySelectorAll('select');
                 const inputs = row.querySelectorAll('input');
                 if (selects[0].value && inputs[0].value) {
-                    const ingredient = inventoryData.ingredients.find(i => i.id === parseInt(selects[0].value));
-                    ingredients.push({
+const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(ingredientId));                    ingredients.push({
                         ingredientId: selects[0].value,
                         name: ingredient ? ingredient.name : '',
                         qty: parseFloat(inputs[0].value) || 0,
@@ -2666,23 +2676,20 @@ window._editingRecipe = false;
         // ==========================================
         
         function resetGRNForm() {
-            const form = document.getElementById('grn-form');
-            if (form) form.reset();
-            
-            const grnNum = 'GRN-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(Math.random()*1000);
-            const grnNumberInput = document.getElementById('auto-grn-number');
-            if (grnNumberInput) grnNumberInput.value = grnNum;
-            
-            const dateInput = document.querySelector('#grn-modal input[name="date"]');
-            if (dateInput) dateInput.valueAsDate = new Date();
-            
-            const container = document.getElementById('grn-items-container');
-            if (container) {
-                container.innerHTML = createGRNRowHTML(true);
-            }
-            
-            updateGRNTotals();
-        }
+    editingGRNId = null; // Important: Clear edit state
+    const form = document.getElementById('grn-form');
+    form.reset();
+    
+    // Auto generate new GRN number
+    const grnNum = 'GRN-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(Math.random()*1000);
+    document.getElementById('auto-grn-number').value = grnNum;
+    document.querySelector('#grn-modal input[name="date"]').valueAsDate = new Date();
+    
+    // Start with 1 clean row
+    const container = document.getElementById('grn-items-container');
+    container.innerHTML = createGRNRowHTML(true);
+    updateGRNTotals();
+}
         
         function createGRNRowHTML(isFirst = false) {
     const options = inventoryData.ingredients.map(ing => 
@@ -2691,13 +2698,13 @@ window._editingRecipe = false;
     
     return `
         <div class="grn-item-row" style="display: grid; grid-template-columns: 2fr 1.5fr 1fr 1fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: center; background: white; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb;">
-            <select class="form-select grn-item-select" required onchange="updateGRNRowTotal(this)" style="width: 100%;">
+            <select class="form-select grn-item-select" required onchange="updateGRNRowUnit(this)" style="width: 100%;">
                 <option value="">Select Ingredient</option>
                 ${options}
             </select>
-            <input type="text" class="form-input grn-item-supplier" placeholder="Supplier / Store" style="width: 100%;">
-            <input type="number" class="form-input" placeholder="0.00000" step="0.00001" min="0.00001" required onchange="updateGRNRowTotal(this)" style="text-align: right;">
-            <input type="number" class="form-input" placeholder="0.00000" step="0.00001" min="0" required onchange="updateGRNRowTotal(this)" style="text-align: right;">
+            <input type="text" class="form-input grn-item-supplier" placeholder="Supplier / Store" style="width: 100%;" value="${document.querySelector('#grn-form input[name="supplier"]')?.value || ''}">
+            <input type="number" class="form-input grn-qty" placeholder="0.00000" step="0.00001" min="0.00001" required oninput="updateGRNRowTotal(this)" style="text-align: right;">
+            <input type="number" class="form-input grn-cost" placeholder="0.00000" step="0.00001" min="0" required oninput="updateGRNRowTotal(this)" style="text-align: right;">
             <div class="row-total" style="font-weight: 700; color: var(--dark); text-align: right;">Rs 0.00</div>
             <button type="button" class="remove-ingredient" onclick="removeGRNRow(this)" ${isFirst ? 'style="opacity: 0.3;" disabled title="Cannot remove last item"' : ''}>
                 <i class="fas fa-trash"></i>
@@ -2705,136 +2712,138 @@ window._editingRecipe = false;
         </div>
     `;
 }
-        
-        function addGRNRow() {
-            const container = document.getElementById('grn-items-container');
-            const div = document.createElement('div');
-            div.innerHTML = createGRNRowHTML(false);
-            container.appendChild(div.firstElementChild);
-            updateGRNTotals();
-            container.scrollTop = container.scrollHeight;
-        }
-        
-        function removeGRNRow(btn) {
-            const rows = document.querySelectorAll('.grn-item-row');
-            if (rows.length <= 1) {
-                alert('You must have at least one item in the GRN.');
-                return;
-            }
-            btn.closest('.grn-item-row').remove();
-            updateGRNTotals();
-        }
-        
-        function updateGRNRowTotal(element) {
-    const row = element.closest('.grn-item-row');
-    const inputs = row.querySelectorAll('input[type="number"]');
-    const qty = parseFloat(inputs[0].value) || 0;
-    const cost = parseFloat(inputs[1].value) || 0;
-    const total = qty * cost;
-    row.querySelector('.row-total').textContent = 'Rs ' + total.toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 5});
-    updateGRNTotals();
-}
-        
-        function updateGRNTotals() {
-    let grandTotal = 0;
-    let itemCount = 0;
-    document.querySelectorAll('.grn-item-row').forEach(row => {
-        const inputs = row.querySelectorAll('input[type="number"]');
-        const qty = parseFloat(inputs[0].value) || 0;
-        const cost = parseFloat(inputs[1].value) || 0;
-        grandTotal += qty * cost;
-        if (qty > 0) itemCount++;
-    });
-    document.getElementById('grn-grand-total').textContent = 'Rs ' + grandTotal.toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 5});
-    document.getElementById('total-items-count').textContent = itemCount;
-}
-        
-        function saveGRN(e) {
-            e.preventDefault();
-            const form = e.target;
-            
-            const items = [];
-            let hasError = false;
-            
-            document.querySelectorAll('.grn-item-row').forEach((row) => {
-                const select = row.querySelector('select');
-                const inputs = row.querySelectorAll('input');
-                
-const ingredientId = select.value;
-const supplierInput = row.querySelector('.grn-item-supplier');
-const itemSupplier = supplierInput ? supplierInput.value.trim() : '';
-const inputs_num = row.querySelectorAll('input[type="number"]');
-const qty = parseFloat(inputs_num[0].value);
-const unitCost = parseFloat(inputs_num[1].value);
-                
-                if (!ingredientId || !qty || unitCost === undefined) {
-                    hasError = true;
-                    row.style.borderColor = 'var(--danger)';
-                    return;
-                }
-                
-                row.style.borderColor = '#e5e7eb';
-                
-                const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(ingredientId));
 
-                if (ingredient) {
-                    items.push({
-    ingredientId: ingredientId,
-    name: ingredient.name,
-    qty: qty,
-    unit: ingredient.unit,
-    unitCost: unitCost,
-    total: qty * unitCost,
-    itemSupplier: itemSupplier   // ← add this line
-});
-                    ingredient.currentStock += qty;
-                }
-            });
-            
-            if (hasError) {
-                alert('Please fill in all item details correctly.');
-                return;
-            }
-            
-            if (items.length === 0) {
-                alert('Please add at least one item to the GRN.');
-                return;
-            }
-            
-            const grn = {
-                id: generateId(),
-                grnNumber: form.grnNumber.value,
-                date: form.date.value,
-                supplier: form.supplier.value,
-                invoiceNumber: form.invoiceNumber.value,
-                items: items,
-                total: items.reduce((sum, item) => sum + item.total, 0),
-                notes: form.notes.value,
-                timestamp: new Date().toISOString()
-            };
-            
-            inventoryData.grnHistory.unshift(grn);
-            saveDataToStorage();
-            
-            closeModal('grn-modal');
-            renderIngredients();
-            renderGRN();
-            refreshDashboard();
-            
-            alert(`GRN saved successfully!\n\nGRN #: ${grn.grnNumber}\nItems: ${items.length}\nTotal: Rs ${grn.total.toLocaleString('en-PK', {minimumFractionDigits: 2})}`);
+function updateGRNRowUnit(select) {
+    const row = select.closest('.grn-item-row');
+    const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(select.value));
+    if (ingredient) {
+        // You can update unit display if needed
+        console.log('Selected unit:', ingredient.unit);
+    }
+}
+        
+        // Global variable to track if we are editing
+let editingGRNId = null;
+
+function saveGRN(e) {
+    e.preventDefault();
+    const form = e.target;
+
+    // Collect all items
+    const items = [];
+    let hasError = false;
+    
+    document.querySelectorAll('.grn-item-row').forEach(row => {
+        const select = row.querySelector('.grn-item-select');
+        const qtyInput = row.querySelector('.grn-qty');
+        const costInput = row.querySelector('.grn-cost');
+        const supplierInput = row.querySelector('.grn-item-supplier');
+        
+        const ingredientId = select.value;
+        const qty = parseFloat(qtyInput.value) || 0;
+        const unitCost = parseFloat(costInput.value) || 0;
+        const itemSupplier = supplierInput?.value?.trim() || form.supplier.value || 'Main Supplier';
+
+        // Validate
+        if (!ingredientId || qty <= 0 || unitCost <= 0) {
+            row.style.borderColor = 'var(--danger)';
+            hasError = true;
+            return;
         }
+        
+        row.style.borderColor = '#e5e7eb';
+
+        const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(ingredientId));
+        if (!ingredient) {
+            alert(`Ingredient not found: ${ingredientId}`);
+            hasError = true;
+            return;
+        }
+
+        items.push({
+            ingredientId: ingredient.id,
+            name: ingredient.name,
+            qty: qty,
+            unit: ingredient.unit,
+            unitCost: unitCost,
+            total: qty * unitCost,
+            itemSupplier: itemSupplier
+        });
+    });
+
+    if (hasError) {
+        alert('Please fill all required fields correctly for each item');
+        return;
+    }
+
+    if (items.length === 0) {
+        alert('Please add at least one item');
+        return;
+    }
+
+    // Update stock for all items
+    items.forEach(item => {
+        const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(item.ingredientId));
+        if (ingredient) {
+            ingredient.currentStock += item.qty;
+        }
+    });
+
+    // Create GRN
+    const grn = {
+        id: generateId(),
+        grnNumber: form.grnNumber.value || 
+                   ('GRN-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + 
+                    Math.floor(Math.random()*1000)),
+        date: form.date.value || new Date().toISOString().slice(0,10),
+        supplier: form.supplier.value || 'Default Supplier',
+        invoiceNumber: form.invoiceNumber.value || '',
+        items: items,
+        total: items.reduce((sum, item) => sum + item.total, 0),
+        notes: form.notes.value || '',
+        timestamp: new Date().toISOString()
+    };
+
+    // Save
+    inventoryData.grnHistory.unshift(grn);
+    saveDataToStorage();
+
+    // Close and refresh
+    closeModal('grn-modal');
+    renderIngredients();
+    renderGRN();
+    refreshDashboard();
+
+    // Success message
+    alert(`✅ GRN ${grn.grnNumber} saved!\nAdded ${items.length} item(s)\nTotal: ${formatCurrency(grn.total)}`);
+}
+
         
         function renderGRN() {
             const container = document.getElementById('grn-container');
-            const dateFilter = document.getElementById('grn-date-filter')?.value;
-            const supplierFilter = document.getElementById('grn-supplier-filter')?.value?.toLowerCase();
-            
-            if (!container) return;
-            
-            let filtered = inventoryData.grnHistory;
-            
-            if (dateFilter) filtered = filtered.filter(g => g.date === dateFilter);
-            if (supplierFilter) filtered = filtered.filter(g => g.supplier.toLowerCase().includes(supplierFilter));
+            const dateFilterInput = document.getElementById('grn-date-filter');
+const dateFilter = dateFilterInput?.value?.trim() || '';
+
+const supplierFilter = document.getElementById('grn-supplier-filter')?.value?.toLowerCase() || '';
+
+let filtered = [...inventoryData.grnHistory];  // copy array
+
+// Only filter by date if user has actually selected something
+if (dateFilter && dateFilter.length === 10) {
+    filtered = filtered.filter(g => g.date === dateFilter);
+}
+
+if (supplierFilter) {
+    filtered = filtered.filter(g => 
+        g.supplier.toLowerCase().includes(supplierFilter) ||
+        (g.invoiceNumber && g.invoiceNumber.toLowerCase().includes(supplierFilter))
+    );
+}
+
+// When no date is selected → show newest first
+if (!dateFilter) {
+    filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
+}
             
             if (filtered.length === 0) {
                 container.innerHTML = `
@@ -2930,104 +2939,169 @@ inventoryData.grnHistory = inventoryData.grnHistory.filter(g => String(g.id) !==
         }
         
         function printGRN(id) {
-const grn = inventoryData.grnHistory.find(g => String(g.id) === String(id));    if (!grn) return;
+    const grn = inventoryData.grnHistory.find(g => String(g.id) === String(id));
+    if (!grn) return;
 
     // Group items by supplier
     const supplierGroups = {};
     grn.items.forEach(item => {
-        const key = item.itemSupplier || grn.supplier || 'Main Supplier';
-        if (!supplierGroups[key]) supplierGroups[key] = [];
-        supplierGroups[key].push(item);
+        const supplier = item.itemSupplier || grn.supplier || 'Main Supplier';
+        if (!supplierGroups[supplier]) {
+            supplierGroups[supplier] = [];
+        }
+        supplierGroups[supplier].push(item);
     });
 
+    // Create HTML for each supplier section
     const supplierSections = Object.entries(supplierGroups).map(([supplier, items]) => {
-        const subtotal = items.reduce((s, i) => s + i.total, 0);
+        const subtotal = items.reduce((sum, item) => sum + item.total, 0);
+        
         return `
-            <h3 style="margin-top:25px;margin-bottom:8px;color:#059669;border-bottom:2px solid #059669;padding-bottom:4px;">
-                🏪 ${supplier}
-            </h3>
-            <table>
-                <thead><tr><th>Item</th><th>Qty</th><th>Unit Cost</th><th>Total</th></tr></thead>
-                <tbody>
-                    ${items.map(i => `<tr>
-                        <td>${i.name}</td>
-                        <td>${i.qty} ${i.unit}</td>
-                        <td>Rs ${i.unitCost.toFixed(2)}</td>
-                        <td>Rs ${i.total.toFixed(2)}</td>
-                    </tr>`).join('')}
-                </tbody>
-                <tfoot><tr>
-                    <td colspan="3" style="text-align:right;font-weight:bold;">Subtotal:</td>
-                    <td style="font-weight:bold;">Rs ${subtotal.toFixed(2)}</td>
-                </tr></tfoot>
-            </table>`;
+            <div style="margin: 20px 0; page-break-inside: avoid;">
+                <h3 style="margin: 0 0 10px 0; padding: 10px; background: #059669; color: white; border-radius: 5px;">
+                    🏪 ${supplier}
+                </h3>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background: #f8fafc;">
+                            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Item</th>
+                            <th style="padding: 8px; border: 1px solid #ddd; text-align: center;">Qty</th>
+                            <th style="padding: 8px; border: 1px solid #ddd; text-align: right;">Unit Cost</th>
+                            <th style="padding: 8px; border: 1px solid #ddd; text-align: right;">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${items.map(item => `
+                            <tr>
+                                <td style="padding: 8px; border: 1px solid #ddd;">${item.name}</td>
+                                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">
+                                    ${item.qty} ${item.unit}
+                                </td>
+                                <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">
+                                    ${formatCurrency(item.unitCost)}
+                                </td>
+                                <td style="padding: 8px; border: 1px solid #ddd; text-align: right; font-weight: bold;">
+                                    ${formatCurrency(item.total)}
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                    <tfoot>
+                        <tr style="background: #f0fdf4;">
+                            <td colspan="3" style="padding: 8px; border: 1px solid #ddd; text-align: right; font-weight: bold;">
+                                ${supplier} Subtotal:
+                            </td>
+                            <td style="padding: 8px; border: 1px solid #ddd; text-align: right; font-weight: bold;">
+                                ${formatCurrency(subtotal)}
+                            </td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        `;
     }).join('');
 
+    // Open print window
     const pw = window.open('', '_blank');
     pw.document.write(`
-        <html><head><title>GRN ${grn.grnNumber}</title>
-        <style>
-            body{font-family:Arial;padding:40px}
-            table{width:100%;border-collapse:collapse;margin-top:10px}
-            th,td{border:1px solid #ddd;padding:10px}
-            th{background:#f8fafc}
-            tfoot td{background:#f0fdf4}
-        </style></head><body>
-        <h2>GOODS RECEIPT NOTE — ${grn.grnNumber}</h2>
-        <p>Date: ${formatDate(grn.date)} &nbsp;|&nbsp; Invoice: ${grn.invoiceNumber || '—'}</p>
-        ${supplierSections}
-        <h3 style="text-align:right;margin-top:20px;font-size:20px;">
-            GRAND TOTAL: Rs ${grn.total.toFixed(2)}
-        </h3>
-        </body></html>
+        <html>
+        <head>
+            <title>GRN ${grn.grnNumber}</title>
+            <style>
+                body { font-family: Arial, sans-serif; padding: 20px; }
+                table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                th, td { border: 1px solid #ddd; padding: 8px; }
+                th { background: #f8fafc; }
+                .header { text-align: center; margin-bottom: 30px; }
+                .summary { margin: 20px 0; padding: 15px; background: #f0fdf4; border-radius: 5px; }
+                @media print {
+                    body { padding: 0; }
+                    .no-print { display: none; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>GOODS RECEIPT NOTE</h1>
+                <h2>${grn.grnNumber}</h2>
+                <p>Date: ${formatDate(grn.date)} | Supplier: ${grn.supplier}</p>
+                <p>Invoice: ${grn.invoiceNumber || 'N/A'}</p>
+            </div>
+            
+            ${supplierSections}
+            
+            <div class="summary">
+                <h3 style="text-align: right; margin: 0;">
+                    GRAND TOTAL: ${formatCurrency(grn.total)}
+                </h3>
+                ${grn.notes ? `<p><strong>Notes:</strong> ${grn.notes}</p>` : ''}
+            </div>
+            
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #000;">
+                <table style="width: 100%; border: none;">
+                    <tr>
+                        <td style="border: none; padding: 10px 0;">
+                            <strong>Received By:</strong><br><br>
+                            _________________________<br>
+                            Name & Signature
+                        </td>
+                        <td style="border: none; padding: 10px 0;">
+                            <strong>Checked By:</strong><br><br>
+                            _________________________<br>
+                            Name & Signature
+                        </td>
+                        <td style="border: none; padding: 10px 0;">
+                            <strong>Approved By:</strong><br><br>
+                            _________________________<br>
+                            Name & Signature
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            
+            <div class="no-print" style="margin-top: 20px; text-align: center;">
+                <button onclick="window.print()" style="padding: 10px 20px; background: #059669; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                    Print this GRN
+                </button>
+            </div>
+        </body>
+        </html>
     `);
     pw.document.close();
-    pw.print();
 }
         function editGRN(id) {
-const grn = inventoryData.grnHistory.find(g => String(g.id) === String(id));    if (!grn) return;
+    const grn = inventoryData.grnHistory.find(g => String(g.id) === String(id));
+    if (!grn) return;
 
-    // Open modal FIRST (this calls resetGRNForm, clearing everything)
+    editingGRNId = id; // Set the global edit state
     openModal('grn-modal');
 
-    // NOW override everything AFTER the reset
-    const grnNumberInput = document.getElementById('auto-grn-number');
-    if (grnNumberInput) {
-        grnNumberInput.value = grn.grnNumber;
-        grnNumberInput.removeAttribute('readonly');
-    }
-
+    // Fill header info
     const form = document.getElementById('grn-form');
+    form.grnNumber.value = grn.grnNumber;
     form.date.value = grn.date;
     form.supplier.value = grn.supplier;
     form.invoiceNumber.value = grn.invoiceNumber || '';
     form.notes.value = grn.notes || '';
 
+    // Clear and fill items
     const container = document.getElementById('grn-items-container');
     container.innerHTML = '';
 
     grn.items.forEach((item, index) => {
-        const options = inventoryData.ingredients.map(ing =>
-            `<option value="${ing.id}" data-unit="${ing.unit}" ${ing.id === item.ingredientId ? 'selected' : ''}>${ing.name} (${ing.unit})</option>`
-        ).join('');
-
         const div = document.createElement('div');
-        div.className = 'grn-item-row';
-        div.style.cssText = 'display: grid; grid-template-columns: 2fr 1.5fr 1fr 1fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: center; background: white; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb;';
-        div.innerHTML = `
-            <select class="form-select grn-item-select" required onchange="updateGRNRowTotal(this)" style="width: 100%;">
-                <option value="">Select Ingredient</option>
-                ${options}
-            </select>
-            <input type="text" class="form-input grn-item-supplier" placeholder="Supplier / Store" value="${item.itemSupplier || ''}" style="width: 100%;">
-            <input type="number" class="form-input" placeholder="0.00000" step="0.00001" min="0.00001" value="${item.qty}" required onchange="updateGRNRowTotal(this)" style="text-align: right;">
-            <input type="number" class="form-input" placeholder="0.00000" step="0.00001" min="0" value="${item.unitCost}" required onchange="updateGRNRowTotal(this)" style="text-align: right;">
-            <div class="row-total" style="font-weight: 700; color: var(--dark); text-align: right;">Rs ${(item.qty * item.unitCost).toLocaleString('en-PK', {minimumFractionDigits: 2, maximumFractionDigits: 5})}</div>
-            <button type="button" class="remove-ingredient" onclick="removeGRNRow(this)" ${index === 0 ? 'style="opacity: 0.3;" disabled' : ''}>
-                <i class="fas fa-trash"></i>
-            </button>
-        `;
-        container.appendChild(div);
+        div.innerHTML = createGRNRowHTML(index === 0);
+        const row = div.firstElementChild;
+        
+        // Set values for this row
+        row.querySelector('.grn-item-select').value = item.ingredientId;
+        row.querySelector('.grn-item-supplier').value = item.itemSupplier || '';
+        const numInputs = row.querySelectorAll('input[type="number"]');
+        numInputs[0].value = item.qty;
+        numInputs[1].value = item.unitCost;
+        
+        container.appendChild(row);
+        updateGRNRowTotal(numInputs[0]); // Trigger calculation
     });
 
     updateGRNTotals();
@@ -3117,7 +3191,110 @@ if (items.length === 0) {
     refreshDashboard();
     showNotification('✅ GRN updated successfully!');
 };
-}    
+}
+function addGRNRow() {
+    const container = document.getElementById('grn-items-container');
+    const rowCount = container.querySelectorAll('.grn-item-row').length;
+    
+    // Create new row
+    const div = document.createElement('div');
+    div.className = 'grn-item-row';
+    div.innerHTML = createGRNRowHTML(rowCount === 0);
+    
+    container.appendChild(div);
+    
+    // ✅ CRITICAL FIX: Populate ingredient dropdown for the new row
+    populateGRNIngredientSelects();
+    
+    // Update totals
+    updateGRNTotals();
+}
+
+// ✅ NEW FUNCTION: Update all ingredient selects in GRN modal
+function populateGRNIngredientSelects() {
+    const options = inventoryData.ingredients.map(ing => 
+        `<option value="${ing.id}" data-unit="${ing.unit}">${ing.name} (${ing.unit})</option>`
+    ).join('');
+    
+    document.querySelectorAll('.grn-item-select').forEach(select => {
+        // Save current selection
+        const currentValue = select.value;
+        
+        // Update options
+        select.innerHTML = '<option value="">Select Ingredient</option>' + options;
+        
+        // Restore selection if it still exists
+        if (currentValue) {
+            select.value = currentValue;
+        }
+    });
+}
+
+// ✅ UPDATE: Also update createGRNRowHTML function
+function createGRNRowHTML(isFirst = false) {
+    // Get fresh options each time
+    const options = inventoryData.ingredients.map(ing => 
+        `<option value="${ing.id}" data-unit="${ing.unit}">${ing.name} (${ing.unit})</option>`
+    ).join('');
+    
+    return `
+        <div class="grn-item-row" style="display: grid; grid-template-columns: 2fr 1.5fr 1fr 1fr 1fr auto; gap: 10px; margin-bottom: 10px; align-items: center; background: white; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb;">
+            <select class="form-select grn-item-select" required onchange="updateGRNRowUnit(this)" style="width: 100%;">
+                <option value="">Select Ingredient</option>
+                ${options}
+            </select>
+            <input type="text" class="form-input grn-item-supplier" placeholder="Supplier / Store" style="width: 100%;" value="${document.querySelector('#grn-form input[name="supplier"]')?.value || ''}">
+            <input type="number" class="form-input grn-qty" placeholder="0.00000" step="0.00001" min="0.00001" required oninput="updateGRNRowTotal(this)" style="text-align: right;">
+            <input type="number" class="form-input grn-cost" placeholder="0.00000" step="0.00001" min="0" required oninput="updateGRNRowTotal(this)" style="text-align: right;">
+            <div class="row-total" style="font-weight: 700; color: var(--dark); text-align: right;">Rs 0.00</div>
+            <button type="button" class="remove-ingredient" onclick="removeGRNRow(this)" ${isFirst ? 'style="opacity: 0.3;" disabled title="Cannot remove last item"' : ''}>
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+    `;
+}
+
+function removeGRNRow(button) {
+    const row = button.closest('.grn-item-row');
+    const rows = document.querySelectorAll('.grn-item-row');
+    
+    if (rows.length <= 1) {
+        alert('You must have at least one item in the GRN');
+        return;
+    }
+    
+    row.remove();
+    updateGRNTotals();
+}
+
+function updateGRNRowTotal(input) {
+    const row = input.closest('.grn-item-row');
+    const qtyInput = row.querySelectorAll('input[type="number"]')[0];
+    const costInput = row.querySelectorAll('input[type="number"]')[1];
+    const totalDiv = row.querySelector('.row-total');
+    
+    const qty = parseFloat(qtyInput.value) || 0;
+    const unitCost = parseFloat(costInput.value) || 0;
+    const total = qty * unitCost;
+    
+    totalDiv.textContent = formatCurrency(total);
+    updateGRNTotals();
+}
+
+function updateGRNTotals() {
+    const rows = document.querySelectorAll('.grn-item-row');
+    let grandTotal = 0;
+    
+    rows.forEach(row => {
+        const totalDiv = row.querySelector('.row-total');
+        const totalText = totalDiv.textContent.replace('Rs ', '').replace(/,/g, '');
+        const total = parseFloat(totalText) || 0;
+        grandTotal += total;
+    });
+    
+    document.getElementById('total-items-count').textContent = rows.length;
+    document.getElementById('grn-grand-total').textContent = formatCurrency(grandTotal);
+}
         
         // ==========================================
         // CONSUMPTION FUNCTIONS
@@ -3298,34 +3475,47 @@ const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(i
         }
         
         // ==========================================
-        // CLOSING FUNCTIONS
-        // ==========================================
-        
-        function generateClosingTable() {
+// UPDATED NIGHT CLOSING LOGIC
+// ==========================================
+function generateClosingTable() {
     const tbody = document.getElementById('closing-table-body');
     if (!tbody) return;
+
     const today = new Date().toISOString().slice(0, 10);
+
     tbody.innerHTML = inventoryData.ingredients.map(ing => {
         const opening = (ing.openingStock !== undefined && ing.openingStock !== null)
             ? ing.openingStock
             : ing.currentStock;
+
         const grnToday = getGRNForDate(ing.id, today);
         const available = opening + grnToday;
-        return `<tr>
-            <td style="font-weight:700;">${ing.name}</td>
-            <td style="color:#1e40af;font-weight:700;">${opening.toFixed(2)}</td>
-            <td style="color:#10b981;font-weight:700;">+${grnToday.toFixed(2)}</td>
-            <td style="font-weight:800;">${available.toFixed(2)}</td>
-            <td>
-                <input type="number" class="form-input" name="physical_${ing.id}"
-                    step="0.001" required style="width:130px;text-align:right;"
-                    placeholder="0.000">
-            </td>
-            <td><span class="unit-badge">${ing.unit}</span></td>
-        </tr>`;
+
+        return `
+            <tr>
+                <td style="font-weight:700;">${ing.name}</td>
+                <td style="color:#1e40af;font-weight:700;">${opening.toFixed(2)}</td>
+                <td style="color:#10b981;font-weight:700;">+${grnToday.toFixed(2)}</td>
+                <td style="font-weight:800;">${available.toFixed(2)}</td>
+                <td>
+                    <input type="number"
+                           class="form-input"
+                           name="physical_${ing.id}"
+                           step="0.0001"
+                           min="0"
+                           style="width:130px;text-align:right;"
+                           placeholder="${available.toFixed(2)}"> 
+                    <small style="color:#6b7280;font-size:11px;display:block;margin-top:4px;">
+                        Empty = No Variance
+                    </small>
+                </td>
+                <td><span class="unit-badge">${ing.unit}</span></td>
+            </tr>
+        `;
     }).join('');
 }
-        function saveClosing(e) {
+
+function saveClosing(e) {
     e.preventDefault();
     const form = e.target;
     const closingDate = form.date.value;
@@ -3333,16 +3523,22 @@ const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(i
     let totalConsumptionCost = 0;
 
     inventoryData.ingredients.forEach(ing => {
-        const physicalInput = form[`physical_${ing.id}`];
-        if (!physicalInput) return;
-
-        const physical = parseFloat(physicalInput.value) || 0;
         const opening = (ing.openingStock !== undefined && ing.openingStock !== null)
             ? ing.openingStock : ing.currentStock;
         const grnToday = getGRNForDate(ing.id, closingDate);
         const available = opening + grnToday;
 
-        // THE CORE FORMULA
+        // Get value from form
+        const physicalInput = form[`physical_${ing.id}`];
+        let physical;
+
+        // If field is empty, assume physical count matches expected available stock
+        if (!physicalInput || physicalInput.value === "") {
+            physical = available;
+        } else {
+            physical = parseFloat(physicalInput.value);
+        }
+
         const consumed = available - physical;
         const consumptionCost = consumed * ing.costPerUnit;
 
@@ -3361,10 +3557,8 @@ const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(i
 
         totalConsumptionCost += Math.max(0, consumptionCost);
 
-        // Update current stock to physical count
+        // Carry forward: set this count as tomorrow's opening
         ing.currentStock = physical;
-
-        // AUTO CARRY FORWARD: tonight's closing = tomorrow's opening stock
         ing.openingStock = physical;
         ing.openingStockDate = closingDate;
     });
@@ -3384,9 +3578,7 @@ const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(i
     renderIngredients();
     refreshDashboard();
     loadClosingData();
-
-    const consumed = closingItems.filter(i => i.consumed > 0).length;
-    alert(`✅ Night Closing Saved!\n\nDate: ${closingDate}\nIngredients tracked: ${closingItems.length}\nItems consumed: ${consumed}\nTotal consumption cost: Rs ${totalConsumptionCost.toLocaleString('en-PK', {minimumFractionDigits:2})}\n\n🔄 Opening stock for tomorrow auto-updated.`);
+    showNotification('🌙 Night Closing Complete');
 }
         
         
@@ -3594,6 +3786,17 @@ function saveOpeningStock() {
     refreshDashboard();
     showNotification('✅ Opening stock saved!');
 }
+function updateDateFilterHint() {
+    const input = document.getElementById('grn-date-filter');
+    const hint = document.getElementById('date-filter-hint');
+    if (input && hint) {
+        hint.style.display = input.value ? 'inline' : 'none';
+    }
+}
+
+// Call it when page loads and when filter changes
+document.addEventListener('DOMContentLoaded', updateDateFilterHint);
+document.getElementById('grn-date-filter')?.addEventListener('change', updateDateFilterHint);
     </script>
 </body>
 </html>
