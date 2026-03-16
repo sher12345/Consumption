@@ -1,4 +1,5 @@
 
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3318,8 +3319,8 @@ const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(i
             <td style="font-weight:800;">${available.toFixed(2)}</td>
             <td>
                 <input type="number" class="form-input" name="physical_${ing.id}"
-                    step="0.001" required style="width:130px;text-align:right;"
-                    placeholder="0.000">
+    step="0.001" style="width:130px;text-align:right;"
+    value="${((ing.openingStock !== undefined && ing.openingStock !== null) ? ing.openingStock : ing.currentStock).toFixed(3)}">
             </td>
             <td><span class="unit-badge">${ing.unit}</span></td>
         </tr>`;
@@ -3336,8 +3337,9 @@ const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(i
         const physicalInput = form[`physical_${ing.id}`];
         if (!physicalInput) return;
 
-        const physical = parseFloat(physicalInput.value) || 0;
-        const opening = (ing.openingStock !== undefined && ing.openingStock !== null)
+const physical = physicalInput.value === '' ? 
+    ((ing.openingStock !== undefined && ing.openingStock !== null) ? ing.openingStock : ing.currentStock) 
+    : parseFloat(physicalInput.value) || 0;        const opening = (ing.openingStock !== undefined && ing.openingStock !== null)
             ? ing.openingStock : ing.currentStock;
         const grnToday = getGRNForDate(ing.id, closingDate);
         const available = opening + grnToday;
