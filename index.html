@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -961,8 +962,15 @@
                     </div>
                     
                     <div class="filters">
-                        <input type="date" class="form-input" id="grn-date-filter" onchange="filterGRN()">
-                        <input type="text" class="form-input" id="grn-supplier-filter" placeholder="Filter by supplier..." onkeyup="filterGRN()">
+<div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+    <div>
+        <label style="font-size: 13px; color: #6b7280; margin-bottom: 4px; display: block;">Filter by Date</label>
+        <input type="date" class="form-input" id="grn-date-filter" onchange="filterGRN()">
+    </div>
+    <small id="date-filter-hint" style="color: #6b7280; font-size: 12px; display: none;">
+        <i class="fas fa-info-circle"></i> Clear date to see all GRNs
+    </small>
+</div>                        <input type="text" class="form-input" id="grn-supplier-filter" placeholder="Filter by supplier..." onkeyup="filterGRN()">
                     </div>
 
                     <div id="grn-container">
@@ -2825,15 +2833,29 @@ const unitCost = parseFloat(inputs_num[1].value);
         
         function renderGRN() {
             const container = document.getElementById('grn-container');
-            const dateFilter = document.getElementById('grn-date-filter')?.value;
-            const supplierFilter = document.getElementById('grn-supplier-filter')?.value?.toLowerCase();
-            
-            if (!container) return;
-            
-            let filtered = inventoryData.grnHistory;
-            
-            if (dateFilter) filtered = filtered.filter(g => g.date === dateFilter);
-            if (supplierFilter) filtered = filtered.filter(g => g.supplier.toLowerCase().includes(supplierFilter));
+            const dateFilterInput = document.getElementById('grn-date-filter');
+const dateFilter = dateFilterInput?.value?.trim() || '';
+
+const supplierFilter = document.getElementById('grn-supplier-filter')?.value?.toLowerCase() || '';
+
+let filtered = [...inventoryData.grnHistory];  // copy array
+
+// Only filter by date if user has actually selected something
+if (dateFilter && dateFilter.length === 10) {
+    filtered = filtered.filter(g => g.date === dateFilter);
+}
+
+if (supplierFilter) {
+    filtered = filtered.filter(g => 
+        g.supplier.toLowerCase().includes(supplierFilter) ||
+        (g.invoiceNumber && g.invoiceNumber.toLowerCase().includes(supplierFilter))
+    );
+}
+
+// When no date is selected → show newest first
+if (!dateFilter) {
+    filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
+}
             
             if (filtered.length === 0) {
                 container.innerHTML = `
@@ -3310,18 +3332,19 @@ const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(i
             : ing.currentStock;
         const grnToday = getGRNForDate(ing.id, today);
         const available = opening + grnToday;
-        return `<tr>
-            <td style="font-weight:700;">${ing.name}</td>
-            <td style="color:#1e40af;font-weight:700;">${opening.toFixed(2)}</td>
-            <td style="color:#10b981;font-weight:700;">+${grnToday.toFixed(2)}</td>
-            <td style="font-weight:800;">${available.toFixed(2)}</td>
-            <td>
-                <input type="number" class="form-input" name="physical_${ing.id}"
-    step="0.001" style="width:130px;text-align:right;"
-    value="${((ing.openingStock !== undefined && ing.openingStock !== null) ? ing.openingStock : ing.currentStock).toFixed(3)}">
-            </td>
-            <td><span class="unit-badge">${ing.unit}</span></td>
-        </tr>`;
+return `<tr>
+    <td style="font-weight:700;">${ing.name}</td>
+    <td style="color:#1e40af;font-weight:700;">${opening.toFixed(2)}</td>
+    <td style="color:#10b981;font-weight:700;">+${grnToday.toFixed(2)}</td>
+    <td style="font-weight:800;">${available.toFixed(2)}</td>
+    <td>
+        <input type="number" class="form-input" name="physical_${ing.id}"
+            step="0.001" min="0" style="width:130px;text-align:right;"
+            placeholder="${available.toFixed(3)}"
+            value="${available.toFixed(3)}">   <!-- pre-fill with available -->
+    </td>
+    <td><span class="unit-badge">${ing.unit}</span></td>
+</tr>`;
     }).join('');
 }
         function saveClosing(e) {
@@ -3333,11 +3356,17 @@ const ingredient = inventoryData.ingredients.find(i => String(i.id) === String(i
 
     inventoryData.ingredients.forEach(ing => {
         const physicalInput = form[`physical_${ing.id}`];
-        if (!physicalInput) return;
+let physical = available;  // default = no change
 
-const physical = physicalInput.value === '' ? 
-    ((ing.openingStock !== undefined && ing.openingStock !== null) ? ing.openingStock : ing.currentStock) 
-    : parseFloat(physicalInput.value) || 0;        const opening = (ing.openingStock !== undefined && ing.openingStock !== null)
+if (physicalInput && physicalInput.value !== '') {
+    const entered = parseFloat(physicalInput.value);
+    if (!isNaN(entered) && entered >= 0) {
+        physical = entered;
+    } else {
+        // optional: you can alert or mark red here if invalid
+        // for now we just keep default
+    }
+}        const opening = (ing.openingStock !== undefined && ing.openingStock !== null)
             ? ing.openingStock : ing.currentStock;
         const grnToday = getGRNForDate(ing.id, closingDate);
         const available = opening + grnToday;
@@ -3594,6 +3623,17 @@ function saveOpeningStock() {
     refreshDashboard();
     showNotification('✅ Opening stock saved!');
 }
+function updateDateFilterHint() {
+    const input = document.getElementById('grn-date-filter');
+    const hint = document.getElementById('date-filter-hint');
+    if (input && hint) {
+        hint.style.display = input.value ? 'inline' : 'none';
+    }
+}
+
+// Call it when page loads and when filter changes
+document.addEventListener('DOMContentLoaded', updateDateFilterHint);
+document.getElementById('grn-date-filter')?.addEventListener('change', updateDateFilterHint);
     </script>
 </body>
 </html>
