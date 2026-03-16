@@ -2774,8 +2774,7 @@ const inputs_num = row.querySelectorAll('input[type="number"]');
 const qty = parseFloat(inputs_num[0].value);
 const unitCost = parseFloat(inputs_num[1].value);
                 
-                if (!ingredientId || !qty || unitCost === undefined) {
-                    hasError = true;
+if (!ingredientId || isNaN(qty) || qty <= 0 || isNaN(unitCost) || unitCost < 0) {                    hasError = true;
                     row.style.borderColor = 'var(--danger)';
                     return;
                 }
@@ -2786,7 +2785,7 @@ const unitCost = parseFloat(inputs_num[1].value);
 
                 if (ingredient) {
                     items.push({
-    ingredientId: ingredientId,
+    ingredientId: ingredient.id,
     name: ingredient.name,
     qty: qty,
     unit: ingredient.unit,
@@ -3029,7 +3028,7 @@ const grn = inventoryData.grnHistory.find(g => String(g.id) === String(id));    
 
     grn.items.forEach((item, index) => {
         const options = inventoryData.ingredients.map(ing =>
-            `<option value="${ing.id}" data-unit="${ing.unit}" ${ing.id === item.ingredientId ? 'selected' : ''}>${ing.name} (${ing.unit})</option>`
+            `<option value="${ing.id}" data-unit="${ing.unit}" ${String(ing.id) === String(item.ingredientId) ? 'selected' : ''}>${ing.name} (${ing.unit})</option>`
         ).join('');
 
         const div = document.createElement('div');
