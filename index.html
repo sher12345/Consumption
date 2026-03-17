@@ -2094,9 +2094,11 @@
             }
             if (modalId === 'add-recipe-modal' && !window._editingRecipe) populateRecipeIngredientSelects();
             if (modalId === 'closing-modal') {
-                document.querySelector('#closing-form input[name="date"]').valueAsDate = new Date();
-                generateClosingTable();
-            }
+    const dateField = document.querySelector('#closing-form input[name="date"]');
+    dateField.valueAsDate = new Date();
+    dateField.onchange = generateClosingTable;
+    generateClosingTable();
+}
             if (modalId === 'add-ingredient-modal') {
                 populateCategorySelect();
             }
@@ -3504,6 +3506,11 @@
                         </div>
                     `).join('')}
                 </div>
+                 <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+                    <button onclick="deleteConsumptionLog('${log.id}')" style="background:#fee2e2;color:#991b1b;border:none;padding:6px 14px;border-radius:8px;font-weight:700;cursor:pointer;font-size:12px;">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </div>
             </div>
         `;
     }).join('');
@@ -3609,8 +3616,8 @@
     const tbody = document.getElementById('closing-table-body');
     if (!tbody) return;
 
-    const today = new Date().toISOString().slice(0, 10);
-
+const dateInput = document.querySelector('#closing-form input[name="date"]');
+const today = dateInput ? dateInput.value : new Date().toISOString().slice(0, 10);
     tbody.innerHTML = inventoryData.ingredients.map(ing => {
         // CRITICAL FIX: Ensure proper number conversion
         let opening = 0;
@@ -3624,8 +3631,9 @@
         // Validate it's a real number
         if (isNaN(opening)) opening = 0;
 
-        const grnToday = getGRNForDate(ing.id, today);
-        const available = opening + grnToday;
+// Get opening stock date to know from when to count GRNs
+const fromDate = ing.openingStockDate || today;
+const grnToday = getGRNForDate(ing.id, today, fromDate);        const available = opening + grnToday;
         
         // DEBUG for Peri Peri
         if (ing.name.includes('Peri')) {
@@ -3653,10 +3661,7 @@
                            max="${available}"
                            style="width:130px;text-align:right;"
                            placeholder="${available.toFixed(3)}">
-                    <small style="color:#6b7280;font-size:11px;display:block;margin-top:4px;">
-                        Max: ${available.toFixed(3)}
-                    </small>
-                </td>
+                                    </td>
                 <td><span class="unit-badge">${ing.unit}</span></td>
             </tr>
         `;
@@ -3694,8 +3699,8 @@ function validatePhysicalInput(input, maxAvailable) {
         }
 
         // Get today's GRN
-        const grnToday = getGRNForDate(ing.id, closingDate);
-        
+const fromDate = ing.openingStockDate || closingDate;
+const grnToday = getGRNForDate(ing.id, closingDate, fromDate);        
         // Calculate available
         const available = parseFloat((opening + grnToday).toFixed(3));
 
@@ -3935,19 +3940,24 @@ function validatePhysicalInput(input, maxAvailable) {
         });
         
         // Get total GRN received for a specific ingredient on a specific date
-        function getGRNForDate(ingredientId, date) {
-            let total = 0;
-            inventoryData.grnHistory.forEach(grn => {
-                if (grn.date === date) {
-                    grn.items.forEach(item => {
-                        if (String(item.ingredientId) === String(ingredientId)) {
-                            total += item.qty;
-                        }
-                    });
+        function getGRNForDate(ingredientId, date, fromDate = null) {
+    let total = 0;
+    inventoryData.grnHistory.forEach(grn => {
+        const grnDate = grn.date;
+        const matchesDate = fromDate 
+            ? (grnDate >= fromDate && grnDate <= date)
+            : grnDate === date;
+        
+        if (matchesDate) {
+            grn.items.forEach(item => {
+                if (String(item.ingredientId) === String(ingredientId)) {
+                    total += item.qty;
                 }
             });
-            return total;
         }
+    });
+    return total;
+}
 
         // Populate opening stock modal table
         function populateOpeningStockTable() {
@@ -4054,6 +4064,14 @@ function validatePhysicalInput(input, maxAvailable) {
         // Call it when page loads and when filter changes
         document.addEventListener('DOMContentLoaded', updateDateFilterHint);
         document.getElementById('grn-date-filter')?.addEventListener('change', updateDateFilterHint);
+    function deleteConsumptionLog(id) {
+    if (!confirm('Delete this consumption entry?')) return;
+    inventoryData.consumptionLog = inventoryData.consumptionLog.filter(c => String(c.id) !== String(id));
+    saveDataToStorage();
+    renderConsumptionLive();
+    refreshDashboard();
+    showNotification('Consumption entry deleted');
+}
     </script>
 </body>
 </html>
