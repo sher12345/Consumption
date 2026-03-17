@@ -3654,13 +3654,13 @@ const grnToday = getGRNForDate(ing.id, today, fromDate);        const available 
                 <td style="font-weight:800;">${available.toFixed(3)}</td>
                 <td>
                     <input type="number"
-                           class="form-input physical-input"
-                           name="physical_${ing.id}"
-                           step="0.001"
-                           min="0"
-                           max="${available}"
-                           style="width:130px;text-align:right;"
-                           placeholder="${available.toFixed(3)}">
+       class="form-input physical-input"
+       name="physical_${ing.id}"
+       step="0.001"
+       min="0"
+       max="${available}"
+       style="width:130px;text-align:right;"
+       placeholder="${available.toFixed(3)}">
                                     </td>
                 <td><span class="unit-badge">${ing.unit}</span></td>
             </tr>
@@ -3712,12 +3712,7 @@ const grnToday = getGRNForDate(ing.id, closingDate, fromDate);
             physical = parseFloat(parseFloat(physicalInput.value).toFixed(3));
         }
 
-        // FIX: Ensure physical doesn't exceed available (data integrity)
-        if (physical > available) {
-            physical = available;
-        }
-
-        // Calculate consumed with proper precision
+                // Calculate consumed with proper precision
         const consumed = parseFloat((available - physical).toFixed(3));
         const consumptionCost = parseFloat((consumed * ing.costPerUnit).toFixed(2));
 
