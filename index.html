@@ -3641,23 +3641,28 @@
         return `
             <tr data-ingredient-id="${ing.id}">
                 <td style="font-weight:700;">${ing.name}</td>
-                <td style="color:#1e40af;font-weight:700;" class="opening-cell">${opening.toFixed(3)}</td>
+                <td style="color:#1e40af;font-weight:700;">${opening.toFixed(3)}</td>
                 <td style="color:#10b981;font-weight:700;">+${grnToday.toFixed(3)}</td>
-                <td style="font-weight:800;" class="available-cell">${available.toFixed(3)}</td>
+                <td style="font-weight:800;">${available.toFixed(3)}</td>
                 <td>
                     <input type="number"
                            class="form-input physical-input"
                            name="physical_${ing.id}"
                            step="0.001"
                            min="0"
+                           max="${available}"
                            style="width:130px;text-align:right;"
                            placeholder="${available.toFixed(3)}">
+                    <small style="color:#6b7280;font-size:11px;display:block;margin-top:4px;">
+                        Max: ${available.toFixed(3)}
+                    </small>
                 </td>
                 <td><span class="unit-badge">${ing.unit}</span></td>
             </tr>
         `;
     }).join('');
 }
+
 // Add validation function
 function validatePhysicalInput(input, maxAvailable) {
     const val = parseFloat(input.value);
